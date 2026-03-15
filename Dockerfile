@@ -14,9 +14,9 @@ COPY index.js ./
 RUN mkdir -p /data
 
 # Run as non-root user for security
-RUN addgroup -S courtpass && adduser -S courtpass -G courtpass
-RUN chown -R courtpass:courtpass /app /data
-USER courtpass
+RUN addgroup -S courtpin && adduser -S courtpin -G courtpin
+RUN chown -R courtpin:courtpin /app /data
+USER courtpin
 
 # Expose admin portal port
 EXPOSE 3000

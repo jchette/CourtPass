@@ -1,6 +1,6 @@
-# Contributing to CourtPass
+# Contributing to CourtPin
 
-Thank you for your interest in CourtPass. Contributions of all kinds are welcome — bug fixes, new features, documentation improvements, and real-world feedback from clubs using it in production.
+Thank you for your interest in CourtPin. Contributions of all kinds are welcome — bug fixes, new features, documentation improvements, and real-world feedback from clubs using it in production.
 
 ---
 
@@ -49,12 +49,12 @@ See the Submitting a pull request section below.
 
 ## Development setup
 
-To work on CourtPass locally you need Node.js 18 or later installed. You will also need real credentials for CourtReserve and UniFi Access to test against — CourtPass does not have a mock mode.
+To work on CourtPin locally you need Node.js 18 or later installed. You will also need real credentials for CourtReserve and UniFi Access to test against — CourtPin does not have a mock mode.
 
 ```bash
 # 1. Fork the repository on GitHub, then clone your fork
-git clone https://github.com/YOUR_USERNAME/courtpass.git
-cd courtpass
+git clone https://github.com/YOUR_USERNAME/courtpin.git
+cd courtpin
 
 # 2. Install dependencies
 npm install
@@ -79,7 +79,7 @@ npm start
 
 ### Watching the logs
 
-CourtPass logs every action to stdout with a timestamp and level:
+CourtPin logs every action to stdout with a timestamp and level:
 
 ```
 [2026-03-15T12:00:00.000Z] [INFO]  Fetched 2 reservation(s)
@@ -98,16 +98,16 @@ To test without waiting for a real reservation to fall into the 60-minute window
 NOTIFY_MINUTES_BEFORE=1440
 ```
 
-This makes CourtPass process any reservation happening today, regardless of how far away it is.
+This makes CourtPin process any reservation happening today, regardless of how far away it is.
 
 ---
 
 ## Project structure
 
-CourtPass is intentionally a single-file project to keep it easy to read and understand.
+CourtPin is intentionally a single-file project to keep it easy to read and understand.
 
 ```
-courtpass/
+courtpin/
 ├── index.js            The entire application — all configuration, API calls,
 │                       email/SMS functions, admin server, and scheduler
 ├── package.json        Project metadata and dependencies
@@ -143,7 +143,7 @@ The file is organized into clearly labeled sections separated by comment banners
 
 ## Code style guidelines
 
-CourtPass deliberately avoids build tools, transpilers, and heavy frameworks to stay accessible to developers of all experience levels.
+CourtPin deliberately avoids build tools, transpilers, and heavy frameworks to stay accessible to developers of all experience levels.
 
 - **Plain Node.js** — no TypeScript, no Babel, no webpack
 - **Minimal dependencies** — currently only `axios`, `dotenv`, and `node-cron`. Think carefully before adding a new dependency.
@@ -215,7 +215,7 @@ When opening a GitHub Issue for a bug, please include:
 Open a GitHub Issue with the label `enhancement` and describe:
 
 1. **The problem you are trying to solve** — what happens today that is inconvenient or missing?
-2. **Your proposed solution** — how would you like CourtPass to handle it?
+2. **Your proposed solution** — how would you like CourtPin to handle it?
 3. **Alternatives you have considered** — are there workarounds you are using today?
 4. **Who else this would help** — is this specific to your setup or would other clubs benefit?
 
@@ -223,7 +223,7 @@ Open a GitHub Issue with the label `enhancement` and describe:
 
 ## Ideas for future contributions
 
-These are improvements that would genuinely help clubs using CourtPass. If you are looking for something to work on, start here.
+These are improvements that would genuinely help clubs using CourtPin. If you are looking for something to work on, start here.
 
 | Idea | Description |
 |---|---|

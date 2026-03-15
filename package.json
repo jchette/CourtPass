@@ -1,5 +1,5 @@
 {
-  "name": "courtpass",
+  "name": "courtpin",
   "version": "1.0.0",
   "description": "Automated building access PIN delivery for CourtReserve members via UniFi Access, email, and SMS.",
   "main": "index.js",

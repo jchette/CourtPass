@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  courtpass:
+  courtpin:
     build: .
-    container_name: courtpass
+    container_name: courtpin
     restart: unless-stopped
 
     # Load all environment variables from your .env file
@@ -19,7 +19,7 @@ services:
     volumes:
       # Persists state.json across container restarts
       # This prevents duplicate PIN emails if the container is restarted
-      - courtpass_data:/data
+      - courtpin_data:/data
 
     # Optional: limit resource usage on a shared machine
     # deploy:
@@ -29,5 +29,5 @@ services:
     #       cpus: '0.5'
 
 volumes:
-  courtpass_data:
+  courtpin_data:
     driver: local

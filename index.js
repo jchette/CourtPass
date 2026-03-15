@@ -517,7 +517,7 @@ async function runCycle() {
 
 // ─── Admin Server ─────────────────────────────────────────────────────────────
 
-const SESSION_COOKIE = 'cr_admin_session';
+const SESSION_COOKIE = 'courtpin_session';
 const sessions       = new Set();
 
 function generateSessionId() {
@@ -525,12 +525,12 @@ function generateSessionId() {
 }
 
 function isAuthenticated(req) {
-  const match = (req.headers.cookie || '').match(/cr_admin_session=([^;]+)/);
+  const match = (req.headers.cookie || '').match(/courtpin_session=([^;]+)/);
   return match && sessions.has(match[1]);
 }
 
 function getSessionId(req) {
-  const match = (req.headers.cookie || '').match(/cr_admin_session=([^;]+)/);
+  const match = (req.headers.cookie || '').match(/courtpin_session=([^;]+)/);
   return match ? match[1] : null;
 }
 
