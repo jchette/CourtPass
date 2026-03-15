@@ -78,7 +78,7 @@ node --version   # should show v20.x.x or later
 ### Step 2 — Get the code
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/courtpin.git
+git clone https://github.com/jchette/courtpin.git
 cd courtpin
 npm install
 ```

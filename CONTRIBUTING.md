@@ -53,7 +53,7 @@ To work on CourtPin locally you need Node.js 18 or later installed. You will als
 
 ```bash
 # 1. Fork the repository on GitHub, then clone your fork
-git clone https://github.com/YOUR_USERNAME/courtpin.git
+git clone https://github.com/jchette/courtpin.git
 cd courtpin
 
 # 2. Install dependencies

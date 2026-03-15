@@ -65,7 +65,7 @@ With defaults (`NOTIFY_MINUTES_BEFORE=60`, `ACCESS_BUFFER_MINUTES=30`):
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/courtpin.git
+git clone https://github.com/jchette/courtpin.git
 cd courtpin
 npm install
 cp env.example .env
