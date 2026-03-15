@@ -112,9 +112,9 @@ courtpin/
 │                       email/SMS functions, admin server, and scheduler
 ├── package.json        Project metadata and dependencies
 ├── env.example         Template showing every available environment variable
-├── Dockerfile          Builds the Docker image for container-based hosting
-├── docker-compose.yml  Defines the Docker service, volume, and port mapping
-├── .dockerignore       Excludes unnecessary files from the Docker image
+├── docker-compose.yml  Defines the Docker service, volume, and port mapping for self-hosting
+│                       (Docker users add their own Dockerfile — see docs/hosting.md)
+├── .dockerignore       Excludes unnecessary files from any Docker image
 ├── .gitignore          Prevents credentials and state files from being committed
 ├── README.md           Full documentation
 ├── CONTRIBUTING.md     This file

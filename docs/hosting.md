@@ -126,7 +126,25 @@ pm2 stop courtpin      # stop the service
 
 ## Option 3 — Docker
 
-Docker packages CourtPin into a self-contained image that runs identically on any machine. CourtPin includes a `Dockerfile` and `docker-compose.yml` ready to use.
+Docker packages CourtPin into a self-contained image that runs identically on any machine. CourtPin includes a `docker-compose.yml` ready to use.
+
+Since the `Dockerfile` is not included in the repo (to keep Railway deployments simple), create a `Dockerfile` in your project root with this content:
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --omit=dev
+COPY index.js ./
+RUN mkdir -p /data
+RUN addgroup -S courtpin && adduser -S courtpin -G courtpin
+RUN chown -R courtpin:courtpin /app /data
+USER courtpin
+EXPOSE 3000
+ENV NODE_ENV=production
+ENV STATE_FILE=/data/state.json
+CMD ["node", "index.js"]
+```
 
 ### Install Docker
 
