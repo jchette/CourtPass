@@ -354,6 +354,23 @@ async function deleteVisitor(visitorId) {
   }
 }
 
+async function fetchExpiredUnifiVisitors() {
+  // Fetch all visitors from UniFi whose end_time has already passed.
+  // This catches orphaned visitors that CourtPin lost track of due to
+  // a state file reset (e.g. Railway restarting and clearing /tmp/state.json).
+  try {
+    const resp = await unifi.get('/api/v1/developer/visitors', {
+      params: { page_num: 1, page_size: 200 },
+    });
+    if (resp.data?.code !== 'SUCCESS') return [];
+    const nowSec = Math.floor(Date.now() / 1000);
+    return (resp.data.data || []).filter(v => v.end_time && v.end_time < nowSec);
+  } catch (err) {
+    log('warn', 'Could not fetch visitor list from UniFi', { err: err.message });
+    return [];
+  }
+}
+
 // ─── Core Processing ──────────────────────────────────────────────────────────
 
 async function processReservation(reservation, state) {
@@ -477,10 +494,11 @@ async function cleanupExpiredVisitors(state) {
   const nowSec = Math.floor(Date.now() / 1000);
   const buffer = config.cleanupBufferMinutes * 60;
 
+  // ── Pass 1: clean up entries tracked in state.json ──────────────────────────
   for (const [key, info] of Object.entries(state.processed)) {
     if (!info.visitorId || nowSec < info.endEpoch + buffer) continue;
 
-    log('info', 'Cleaning up expired visitor', { key, visitorId: info.visitorId });
+    log('info', 'Cleaning up expired visitor (state)', { key, visitorId: info.visitorId });
     try {
       await deleteVisitor(info.visitorId);
     } catch (err) {
@@ -489,6 +507,24 @@ async function cleanupExpiredVisitors(state) {
 
     delete state.processed[key];
     saveState(state);
+  }
+
+  // ── Pass 2: clean up orphaned visitors in UniFi not in state ─────────────────
+  // Handles the case where state.json was reset (Railway restart, container
+  // recreation, etc.) leaving visitors in UniFi with no local record to trigger
+  // cleanup via Pass 1.
+  const knownVisitorIds = new Set(
+    Object.values(state.processed).map(v => v.visitorId).filter(Boolean)
+  );
+  const expiredInUnifi = await fetchExpiredUnifiVisitors();
+  for (const visitor of expiredInUnifi) {
+    if (knownVisitorIds.has(visitor.id)) continue; // already handled in Pass 1
+    log('info', 'Cleaning up orphaned UniFi visitor', { visitorId: visitor.id, endTime: visitor.end_time });
+    try {
+      await deleteVisitor(visitor.id);
+    } catch (err) {
+      log('warn', 'Could not delete orphaned visitor', { visitorId: visitor.id, err: err.message });
+    }
   }
 }
 
