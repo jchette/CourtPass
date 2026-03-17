@@ -76,6 +76,9 @@ const config = {
   stateFile:   process.env.STATE_FILE   || path.join(__dirname, 'state.json'),
   adminPort:   parseInt(process.env.ADMIN_PORT || '3000', 10),
   adminSecret: process.env.ADMIN_SECRET || '',
+  pinMode:     process.env.PIN_MODE === 'static' ? 'static' : 'random',
+  // static — uses CourtReserve OrganizationMemberId as PIN (consistent, member learns once)
+  // random  — generates a new random PIN each reservation (default)
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -461,9 +464,17 @@ async function processReservation(reservation, state) {
     }
 
     // 2. Generate and assign PIN
+    // PIN_MODE=random (default) — new random PIN each reservation via UniFi API
+    // PIN_MODE=static           — uses CourtReserve OrganizationMemberId as PIN
+    //                             requires UniFi Access PIN mode set to Variable Length
+    //                             Access → Settings → General → PIN → Variable Length
     let pin;
     try {
-      pin = await generatePin();
+      if (config.pinMode === 'static') {
+        pin = String(memberId);
+      } else {
+        pin = await generatePin();
+      }
       await assignPin(visitor.id, pin);
     } catch (err) {
       log('error', 'Failed to generate/assign PIN', { visitorId: visitor.id, err: err.message });
@@ -989,6 +1000,7 @@ async function main() {
     accessBufferMinutes:  config.accessBufferMinutes,
     cleanupBufferMinutes: config.cleanupBufferMinutes,
     emailTransport:       config.email.resendApiKey ? 'resend' : 'smtp',
+    pinMode:              config.pinMode,
     smsEnabled:           config.twilio.enabled,
     resources:            config.unifi.resources,
   });
