@@ -168,6 +168,7 @@ Find hex color codes at [htmlcolorcodes.com](https://htmlcolorcodes.com).
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
+| `PIN_MODE` | No | `random` | How PINs are generated. `random` creates a new PIN each reservation. `static` uses the member's CourtReserve `OrganizationMemberId` as their PIN — members learn it once and reuse it forever. Static mode requires UniFi Access PIN mode set to **Variable Length** (Access → Settings → General → PIN). |
 | `NOTIFY_MINUTES_BEFORE` | No | `60` | How many minutes before a reservation to send the PIN. |
 | `ACCESS_BUFFER_MINUTES` | No | `30` | How many minutes before the reservation the PIN becomes active. Members can enter the building this early. |
 | `CLEANUP_BUFFER_MINUTES` | No | `15` | Minutes after reservation end before the Visitor record is deleted and PIN revoked. |
