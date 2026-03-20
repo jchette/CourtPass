@@ -39,6 +39,9 @@ BRAND_ADDRESS=123 Main St, Your City ST
 ADMIN_PORT=3000
 PORT=3000
 ADMIN_SECRET=choose_a_strong_password_here
+EVENT_ACCESS_MODE=pin_individual
+EVENT_ACCESS_BUFFER_MINUTES=30
+EVENT_UNLOCK_NOTIFY=false
 PIN_MODE=random
 NOTIFY_MINUTES_BEFORE=60
 ACCESS_BUFFER_MINUTES=30
@@ -169,6 +172,9 @@ Find hex color codes at [htmlcolorcodes.com](https://htmlcolorcodes.com).
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
+| `EVENT_ACCESS_MODE` | No | `pin_individual` | How door access is granted to event registrants. `pin_individual` — each registrant gets their own unique PIN. `pin_shared` — one PIN for the whole event sent to all registrants. `unlock` — door(s) unlocked for the event duration, no PINs. |
+| `EVENT_ACCESS_BUFFER_MINUTES` | No | `30` | How many minutes before the event start that access activates. Independent of `ACCESS_BUFFER_MINUTES` for reservations. |
+| `EVENT_UNLOCK_NOTIFY` | No | `false` | Unlock mode only. Set `true` to send an email and optional SMS to all registrants notifying them the facility will be open. |
 | `PIN_MODE` | No | `random` | How PINs are generated. `random` creates a new PIN each reservation. `static` uses the member's CourtReserve `OrganizationMemberId` as their PIN — members learn it once and reuse it forever. Static mode requires UniFi Access PIN mode set to **Variable Length** (Access → Settings → General → PIN). |
 | `NOTIFY_MINUTES_BEFORE` | No | `60` | How many minutes before a reservation to send the PIN. |
 | `ACCESS_BUFFER_MINUTES` | No | `30` | How many minutes before the reservation the PIN becomes active. Members can enter the building this early. |
