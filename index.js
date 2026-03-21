@@ -618,11 +618,15 @@ async function processReservation(reservation, state) {
     // PIN_MODE=static           — uses CourtReserve OrganizationMemberId as PIN
     //                             requires UniFi Access PIN mode set to Variable Length
     //                             Access → Settings → General → PIN → Variable Length
+    //                             falls back to random if member ID is missing
     let pin;
     try {
-      if (config.pinMode === 'static') {
+      if (config.pinMode === 'static' && memberId) {
         pin = String(memberId);
       } else {
+        if (config.pinMode === 'static' && !memberId) {
+          log('warn', 'Static PIN mode set but member ID missing — falling back to random PIN', { reservationId });
+        }
         pin = await generatePin();
       }
       await assignPin(visitor.id, pin);
