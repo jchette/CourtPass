@@ -239,6 +239,24 @@ Failed to send email {"err":"535 Authentication failed"}
 
 ---
 
+### UniFi Fabric sites — PIN length locked to 4 digits (known UniFi bug)
+
+**Symptom:** `Assign PIN failed: {"code":"CODE_SYSTEM_ERROR","msg":"Server system error."}` when using `PIN_MODE=static`, and the PIN Length setting in UniFi Access (Settings → General → PIN) is greyed out and stuck on Fixed Length 4-digit.
+
+**Cause:** Confirmed with UniFi support as a known bug — sites enrolled in a **UniFi Fabric** (multi-site management) cannot change their PIN Length setting, even though the option appears in the UI. This is a platform-level bug on Ubiquiti's side, not a CourtPin issue.
+
+**Fix:** Set `STATIC_PIN_LENGTH=4` to truncate the `OrganizationMemberId` to its last 4 digits, matching the fixed length UniFi requires:
+```
+PIN_MODE=static
+STATIC_PIN_LENGTH=4
+```
+
+**Collision risk:** With only 4 digits there are 10,000 possible values, so two members could theoretically share the same truncated PIN. In practice this is low-risk since PINs are only active during that specific member's reservation or event window — someone would need to know a collision exists and know exactly when to use it. For larger clubs wanting to eliminate this risk entirely, `PIN_MODE=random` avoids the issue completely since it doesn't depend on member ID length.
+
+**Checking if the bug has been fixed:** Try toggling UniFi Access → Settings → General → PIN back to Variable Length periodically — if UniFi resolves the bug on their end the setting will become editable again, at which point `STATIC_PIN_LENGTH=full` can be used instead.
+
+---
+
 ### PIN rejected when using static mode
 
 **Symptom:** `Failed to assign PIN` error in logs when `PIN_MODE=static` is set.

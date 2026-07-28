@@ -43,6 +43,7 @@ EVENT_ACCESS_MODE=pin_individual
 EVENT_ACCESS_BUFFER_MINUTES=30
 EVENT_UNLOCK_NOTIFY=false
 PIN_MODE=random
+STATIC_PIN_LENGTH=full
 NOTIFY_MINUTES_BEFORE=60
 ACCESS_BUFFER_MINUTES=30
 CLEANUP_BUFFER_MINUTES=15
@@ -176,6 +177,7 @@ Find hex color codes at [htmlcolorcodes.com](https://htmlcolorcodes.com).
 | `EVENT_ACCESS_BUFFER_MINUTES` | No | `30` | How many minutes before the event start that access activates. Independent of `ACCESS_BUFFER_MINUTES` for reservations. |
 | `EVENT_UNLOCK_NOTIFY` | No | `false` | Unlock mode only. Set `true` to send an email and optional SMS to all registrants notifying them the facility will be open. |
 | `PIN_MODE` | No | `random` | How PINs are generated. `random` creates a new PIN each reservation. `static` uses the member's CourtReserve `OrganizationMemberId` as their PIN — members learn it once and reuse it forever. Static mode requires UniFi Access PIN mode set to **Variable Length** (Access → Settings → General → PIN). |
+| `STATIC_PIN_LENGTH` | No | `full` | Only applies when `PIN_MODE=static`. `full` uses the entire `OrganizationMemberId` as the PIN. A number (e.g. `4`, `6`, `8`) truncates to the last N digits — needed if your UniFi installation's PIN length is locked to a fixed length (e.g. sites enrolled in a UniFi Fabric, which as of testing has a bug locking PIN length to 4 digits). Applies universally to both reservations and events since it reflects the UniFi installation's configuration, not any individual booking. |
 | `NOTIFY_MINUTES_BEFORE` | No | `60` | How many minutes before a reservation to send the PIN. |
 | `ACCESS_BUFFER_MINUTES` | No | `30` | How many minutes before the reservation the PIN becomes active. Members can enter the building this early. |
 | `CLEANUP_BUFFER_MINUTES` | No | `15` | Minutes after reservation end before the Visitor record is deleted and PIN revoked. |
