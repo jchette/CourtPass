@@ -82,6 +82,16 @@ const config = {
   pinMode:     process.env.PIN_MODE === 'static' ? 'static' : 'random',
   // static — uses CourtReserve OrganizationMemberId as PIN (consistent, member learns once)
   // random  — generates a new random PIN each reservation (default)
+  //
+  // STATIC_PIN_LENGTH controls how much of the OrganizationMemberId is used
+  // when PIN_MODE=static. This is a property of the UniFi installation (its
+  // configured PIN length) and applies universally to both reservations and
+  // events — not per-booking.
+  //   full — use the entire OrganizationMemberId, whatever length it is (default)
+  //   4/6/8/etc — use only the last N digits of the OrganizationMemberId
+  //               (needed for UniFi installs where PIN length is locked to a
+  //               fixed length, e.g. sites enrolled in a UniFi Fabric)
+  staticPinLength: process.env.STATIC_PIN_LENGTH || 'full',
   events: {
     // How door access is granted to event registrants:
     //   pin_individual — each registrant gets their own unique PIN (default)
@@ -134,6 +144,18 @@ function fmtLocalDatetime(d) {
   const p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
          `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function deriveStaticPin(memberId) {
+  // Converts a CourtReserve OrganizationMemberId into a static PIN according
+  // to config.staticPinLength ('full' or a specific digit count like 4 or 6).
+  const idStr = String(memberId);
+  if (config.staticPinLength === 'full') return idStr;
+
+  const length = parseInt(config.staticPinLength, 10);
+  if (!length || length <= 0) return idStr; // invalid value — fall back to full ID
+
+  return idStr.slice(-length); // last N digits
 }
 
 // ─── HTTP Clients ─────────────────────────────────────────────────────────────
@@ -622,7 +644,7 @@ async function processReservation(reservation, state) {
     let pin;
     try {
       if (config.pinMode === 'static' && memberId) {
-        pin = String(memberId);
+        pin = deriveStaticPin(memberId);
       } else {
         if (config.pinMode === 'static' && !memberId) {
           log('warn', 'Static PIN mode set but member ID missing — falling back to random PIN', { reservationId });
@@ -728,7 +750,7 @@ async function processEvents(registrations, state) {
 
         let pin;
         try {
-          pin = config.pinMode === 'static' && memberId ? String(memberId) : await generatePin();
+          pin = config.pinMode === 'static' && memberId ? deriveStaticPin(memberId) : await generatePin();
           await assignPin(visitor.id, pin);
         } catch (err) {
           log('error', 'Failed to assign PIN for event registrant', { stateKey, err: err.message });
@@ -1372,6 +1394,7 @@ async function main() {
     cleanupBufferMinutes: config.cleanupBufferMinutes,
     emailTransport:       config.email.resendApiKey ? 'resend' : 'smtp',
     pinMode:              config.pinMode,
+    staticPinLength:      config.pinMode === 'static' ? config.staticPinLength : 'n/a',
     smsEnabled:           config.twilio.enabled,
     eventAccessMode:      config.events.accessMode,
     eventBufferMinutes:   config.events.accessBufferMinutes,
