@@ -99,7 +99,7 @@ Resend sends email over HTTPS (port 443) which is never blocked on cloud platfor
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `RESEND_API_KEY` | If using Resend | — | API key from resend.com → API Keys. Leave blank to use SMTP instead. |
-| `EMAIL_FROM` | Yes | — | Sender address. Must be from a domain verified in Resend. Use `onboarding@resend.dev` for testing. |
+| `EMAIL_FROM` | Yes | — | Sender address. Must be from a domain verified in Resend. Use `onboarding@resend.dev` for testing. Optionally include a display name: `Your Club Name <noreply@yourclub.com>`. |
 
 ### Option B — SMTP (recommended for local / self-hosted)
 
@@ -113,7 +113,7 @@ On a local machine there are no port restrictions — use your existing email ho
 | `SMTP_USER` | If using SMTP | — | SMTP username — usually your full email address. |
 | `SMTP_PASS` | If using SMTP | — | SMTP password or app password. |
 | `SMTP_DEBUG` | No | `false` | Set `true` to log the full SMTP conversation (including AUTH) for troubleshooting delivery failures. Turn back off afterward — verbose and not needed in normal operation. |
-| `EMAIL_FROM` | Yes | — | Sender address — must match your SMTP account domain. |
+| `EMAIL_FROM` | Yes | — | Sender address — must match your SMTP account domain. Optionally include a display name: `Your Club Name <noreply@yourclub.com>`. |
 
 **Common SMTP settings by provider:**
 
