@@ -41,6 +41,8 @@ Every minute, `runCycle()`:
 2. Fetches today's active **event registrations** from CourtReserve → `processEvents()`, grouped by event session
 3. Runs `cleanupExpiredVisitors()` — two passes: (a) delete visitors tracked in `state.json` past their end time, (b) query UniFi directly for any expired visitor not in state (catches orphans from state resets)
 
+`runCycle()` is guarded by a module-level `cycleInProgress` flag — if a cycle is still running when the next `cron.schedule('* * * * *', ...)` tick fires, the new tick logs a warning and returns immediately instead of starting a second, overlapping cycle. This exists because node-cron does not wait for the previous invocation to finish; a slow/hanging request (e.g. an SMTP connection stuck until its ~2 minute timeout) could otherwise let two cycles race to process the same reservation concurrently — this was a real production bug, showing up as repeated UniFi `CODE_SYSTEM_ERROR` failures on `assignPin()`. **Don't remove this guard** without an equivalent replacement.
+
 ### Reservations
 One UniFi Visitor + one PIN per player on the reservation. State key: `reservationId:memberId`.
 
@@ -73,7 +75,13 @@ Controlled by `PIN_MODE`:
 
 `_sendEmail()` picks the transport with a simple, non-configurable priority: **if `RESEND_API_KEY` has any truthy value, Resend is used — full stop, regardless of whether SMTP variables are also populated.** SMTP (via nodemailer) is only used when `RESEND_API_KEY` is empty/unset. There is no merging or fallback between the two. If a user reports "I filled in SMTP but it's still using Resend," the fix is telling them to blank out `RESEND_API_KEY`, not a code change.
 
-Resend is recommended for cloud hosting (Railway blocks outbound SMTP ports 25/465/587 on free/hobby tiers). SMTP is recommended for local hosting (Pi, NAS) where there are no port restrictions and clubs likely already have email hosting through their domain provider.
+Resend is recommended for cloud hosting (Railway blocks outbound SMTP ports 25/465/587 on free/hobby tiers — confirmed in production: SMTP connection attempts fail with `ETIMEDOUT` on the `CONN` command, not an auth/TLS rejection, meaning no amount of SMTP credential fixing helps on a blocked port). SMTP is recommended for local hosting (Pi, NAS) where there are no port restrictions and clubs likely already have email hosting through their domain provider.
+
+`SMTP_DEBUG=true` logs nodemailer's full SMTP conversation (including AUTH) and richer failure fields (`code`, `responseCode`, `response`, `command`) instead of just `err.message` — opt-in and meant to be turned back off after troubleshooting, since the protocol transcript is verbose.
+
+`EMAIL_FROM` accepts a display name — `"Club Name <noreply@domain.com>"` — passed straight through unmodified to both Resend and nodemailer, no code-side parsing needed.
+
+**Email HTML templates use fully inlined `style="..."` attributes, not a `<style>` block with classes.** New Outlook desktop was confirmed in production to not reliably apply class-based CSS from `<head>` — it silently fell back to unstyled plain text (this is how the PIN display bug was found: the PIN rendered small and unbold instead of the intended 52px bold display, while mobile Outlook and Gmail rendered it correctly). Don't reintroduce a `<style>`-block/class approach in `sendAccessEmail()` or `sendUnlockNotificationEmail()`.
 
 ---
 
@@ -101,14 +109,14 @@ A `Dockerfile` is intentionally **not** committed to the repo root — Railway a
 
 - Auth is Bearer token via the `unifi` axios instance, with `rejectUnauthorized: false` in the httpsAgent — UniFi's console uses a self-signed cert by default, this is expected and documented by Ubiquiti, not a security oversight to "fix."
 - Required token scopes: `view:credential` (PIN generation), `edit:visitor` (create/update/delete visitors).
-- `unlockDoor()` handles both `door` and `door_group` resource types from `UNIFI_RESOURCES` — for a `door_group` it first fetches the group's topology to enumerate individual door IDs, then unlocks each one separately (there's no single "unlock this whole group" endpoint).
-- Once a PIN is assigned, UniFi's API only returns a hash on future reads — the plaintext PIN is unrecoverable from UniFi's side. This is why CourtPin persists the PIN in `state.json` and logs at creation time — it's the only source of truth for the admin portal's PIN lookup/resend feature.
+- `unlockDoor()` handles both `door` and `door_group` resource types from `UNIFI_RESOURCES` — for a `door_group` it first fetches the group's topology to enumerate individual door IDs, then unlocks each one separately (there's no single "unlock this whole group" endpoint). Door-group topology responses are not a consistent shape across consoles/firmware — some return a flat `doors[]` array, others (confirmed in production) nest doors arbitrarily deep under `resource_topologies[]` (e.g. `building → floor → resources[]`, `type: "door"`). `collectDoorsFromTopology()` walks both shapes recursively; don't go back to a flat `group.doors || []` read, it silently finds zero doors on nested-shape consoles.
+- Once a PIN is assigned, UniFi's API only returns a hash on future reads — the plaintext PIN is unrecoverable from UniFi's side. This is why CourtPin persists the PIN in `state.json` and logs at creation time — it's the only source of truth for the admin portal's PIN lookup/resend feature. This also means a PIN collision can only ever be discovered by attempting `assignPin()` and having it fail — there's no way to check "is this PIN already active" in advance (see `assignPinWithFallback()` in the PIN generation modes section above).
 
 ---
 
 ## State file (`state.json`)
 
-Flat JSON, single top-level key `processed`, keyed by the state keys described above. No database, no migrations. On Railway this lives at `/tmp/state.json` (ephemeral — cleared on container restart, which is why the UniFi-side orphan cleanup pass in `cleanupExpiredVisitors()` exists as a safety net). On the Pi it can live anywhere persistent, e.g. `~/courtpin/state.json`.
+Flat JSON, single top-level key `processed`, keyed by the state keys described above. No database, no migrations. On Railway this lives at `/tmp/state.json` (or wherever `STATE_FILE` points) by default — ephemeral, cleared on **every** redeploy, including ones triggered just by changing an environment variable, not only code pushes. This is why the UniFi-side orphan cleanup pass in `cleanupExpiredVisitors()` exists as a safety net. The practical impact of a state wipe is reprocessing (duplicate PIN emails) for anything still inside its notification window — see `docs/hosting.md` Option 1 Step 7 for attaching a Railway Volume so `STATE_FILE` survives redeploys. On the Pi it can live anywhere persistent, e.g. `~/courtpin/state.json`, with no such issue.
 
 If you need to force CourtPin to reprocess something (e.g. for testing), the state file can be edited directly or the `STATE_FILE` path changed to point somewhere fresh — there's no CLI or admin-portal action to do this currently.
 
@@ -136,6 +144,9 @@ Dashboard cards show a yellow badge (`Event`, `Event (shared PIN)`, or `Event (d
 - **Don't merge the two-step pattern** in `pin_shared`/`unlock` event processing back into a single gated block — this reintroduces the late-registrant notification bug described above.
 - **Don't add STOP/opt-out language to SMS.** It was deliberately removed — see git history around the SMS template rewrite — because these are transactional access messages, not marketing, and STOP replies would unsubscribe someone from future PIN delivery in a way that causes real confusion at the door.
 - **Don't assume `.env` exists in the repo.** It's gitignored. `env.example` is the template; real credentials live only in Railway's Variables tab or a local `.env` on the Pi.
+- **Don't remove the `cycleInProgress` overlap guard in `runCycle()`.** A hanging request (e.g. SMTP) can otherwise let two cron ticks process the same reservation concurrently — this caused a real production incident (repeated UniFi `CODE_SYSTEM_ERROR`).
+- **Don't revert the email templates' inlined `style="..."` attributes back to a `<style>` block with classes.** New Outlook desktop doesn't reliably apply class-based CSS and silently renders unstyled text — confirmed in production on the PIN display.
+- **Don't revert `assignPinWithFallback()`/`staticPinCandidates()` back to a single direct `deriveStaticPin()` + `assignPin()` call.** Two members can derive the same truncated static PIN (confirmed in production — three collision pairs found), and UniFi enforces PIN uniqueness across active credentials without any way to check in advance.
 
 ---
 

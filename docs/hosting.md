@@ -61,6 +61,17 @@ Click **Deployments → latest → View Logs**. You should see:
 
 Temporarily set `NOTIFY_MINUTES_BEFORE=1440`, create a test reservation in CourtReserve, and watch the logs. Change it back to `60` once confirmed working.
 
+### Step 7 — (Recommended) Add persistent storage for state.json
+
+By default `state.json` lives on Railway's container filesystem, which is wiped on **every** redeploy — including ones triggered just by changing an environment variable. When state is lost, CourtPin has no memory of which reservations/events were already processed, so anything still inside its notification window gets reprocessed (a member may receive a duplicate PIN email). It doesn't affect already-granted access — expired Visitors are still caught by the UniFi-side orphan cleanup — but it's avoidable:
+
+1. Railway dashboard → your service → in the **project canvas view**, click **+ New** (or right-click empty canvas) → **Volume**
+2. Drag a connection from the new Volume node to your CourtPin service to attach it, and set its mount path (e.g. `/data`)
+3. Add a variable: `STATE_FILE=/data/state.json`
+4. Deploy once more — after this, `state.json` persists across restarts and future variable changes
+
+If you don't see a Volumes option in the service's Settings tabs, it's added from the canvas view, not Settings — see step 1.
+
 ---
 
 ## Option 2 — Raspberry Pi (or any always-on Linux machine)
