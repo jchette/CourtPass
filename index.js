@@ -955,41 +955,57 @@ async function cleanupExpiredVisitors(state) {
   }
 }
 
+let cycleInProgress = false;
+
 async function runCycle() {
-  const state = loadState();
+  // node-cron does not wait for a previous invocation to finish before firing
+  // the next one — if a cycle runs long (e.g. a hanging SMTP connection), the
+  // next minute's tick would otherwise start a second, overlapping cycle that
+  // races the first to process the same reservations/events.
+  if (cycleInProgress) {
+    log('warn', 'Skipping cycle — previous cycle still in progress');
+    return;
+  }
+  cycleInProgress = true;
 
-  // ── Reservations ──────────────────────────────────────────────────────────
-  let reservations = [];
   try {
-    reservations = await fetchTodaysReservations();
-    log('info', `Fetched ${reservations.length} reservation(s)`);
-  } catch (err) {
-    log('error', 'Failed to fetch reservations', { err: err.message });
-  }
-  for (const reservation of reservations) {
-    await processReservation(reservation, state).catch(err =>
-      log('error', 'Unexpected error processing reservation', { id: reservation.Id, err: err.message })
-    );
-  }
+    const state = loadState();
 
-  // ── Events ────────────────────────────────────────────────────────────────
-  let registrations = [];
-  try {
-    registrations = await fetchTodaysEventRegistrations();
-    log('info', `Fetched ${registrations.length} event registration(s)`);
-  } catch (err) {
-    log('error', 'Failed to fetch event registrations', { err: err.message });
-  }
-  if (registrations.length) {
-    await processEvents(registrations, state).catch(err =>
-      log('error', 'Unexpected error processing events', { err: err.message })
-    );
-  }
+    // ── Reservations ────────────────────────────────────────────────────────
+    let reservations = [];
+    try {
+      reservations = await fetchTodaysReservations();
+      log('info', `Fetched ${reservations.length} reservation(s)`);
+    } catch (err) {
+      log('error', 'Failed to fetch reservations', { err: err.message });
+    }
+    for (const reservation of reservations) {
+      await processReservation(reservation, state).catch(err =>
+        log('error', 'Unexpected error processing reservation', { id: reservation.Id, err: err.message })
+      );
+    }
 
-  // ── Cleanup ───────────────────────────────────────────────────────────────
-  await cleanupExpiredVisitors(state).catch(err =>
-    log('error', 'Error during cleanup', { err: err.message })
-  );
+    // ── Events ──────────────────────────────────────────────────────────────
+    let registrations = [];
+    try {
+      registrations = await fetchTodaysEventRegistrations();
+      log('info', `Fetched ${registrations.length} event registration(s)`);
+    } catch (err) {
+      log('error', 'Failed to fetch event registrations', { err: err.message });
+    }
+    if (registrations.length) {
+      await processEvents(registrations, state).catch(err =>
+        log('error', 'Unexpected error processing events', { err: err.message })
+      );
+    }
+
+    // ── Cleanup ─────────────────────────────────────────────────────────────
+    await cleanupExpiredVisitors(state).catch(err =>
+      log('error', 'Error during cleanup', { err: err.message })
+    );
+  } finally {
+    cycleInProgress = false;
+  }
 }
 
 // ─── Admin Server ─────────────────────────────────────────────────────────────
