@@ -208,48 +208,36 @@ async function sendUnlockNotificationEmail({ to, memberName, eventName, startDat
     b.address ? `📍 ${b.address}` : '',
   ].filter(Boolean).join('&nbsp;&nbsp;·&nbsp;&nbsp;');
 
+  // Styles are inlined on every element rather than left in a <style> block —
+  // some clients (confirmed: new Outlook desktop) don't reliably apply
+  // class-based CSS from <head> and silently fall back to unstyled text.
   const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8"/>
-  <style>
-    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
-    .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
-    .header { background: ${b.headerColor}; color: #fff; padding: 28px 32px; text-align: center; }
-    .header h1 { margin: 0; font-size: 24px; font-weight: 700; }
-    .header .tagline { margin: 6px 0 0; font-size: 13px; opacity: .85; }
-    .body { padding: 32px; color: #333; }
-    .info-box { background: #f0fff8; border: 2px solid ${b.accentColor}; border-radius: 10px; text-align: center; margin: 24px 0; padding: 24px; }
-    .info-box .headline { font-size: 22px; font-weight: bold; color: ${b.accentColor}; }
-    .info-box .sub { font-size: 13px; color: #555; margin-top: 8px; }
-    .details { background: #f9f9f9; border-radius: 8px; padding: 16px; margin-top: 16px; border-left: 4px solid ${b.accentColor}; }
-    .details p { margin: 6px 0; font-size: 14px; }
-    .footer { text-align: center; font-size: 12px; color: #aaa; padding: 20px 16px; border-top: 1px solid #f0f0f0; line-height: 1.8; }
-    .footer strong { color: #888; }
-  </style>
 </head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>${b.clubName}</h1>
-      ${b.tagline ? `<p class="tagline">${b.tagline}</p>` : ''}
+<body style="font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0;">
+  <div style="max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.1);">
+    <div style="background: ${b.headerColor}; color: #fff; padding: 28px 32px; text-align: center;">
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700;">${b.clubName}</h1>
+      ${b.tagline ? `<p style="margin: 6px 0 0; font-size: 13px; opacity: .85;">${b.tagline}</p>` : ''}
     </div>
-    <div class="body">
-      <p style="font-size:16px;">Hi <strong>${memberName}</strong>,</p>
+    <div style="padding: 32px; color: #333;">
+      <p style="font-size:16px; margin:0;">Hi <strong>${memberName}</strong>,</p>
       <p style="margin-top:8px; color:#555;">Your upcoming event is almost here! The facility will be unlocked and ready for you.</p>
-      <div class="info-box">
-        <div class="headline">Facility Open</div>
-        <div class="sub">No PIN required — doors will be unlocked for your event</div>
-        <div class="sub" style="color:${b.accentColor}; font-weight:600; margin-top:6px;">Open from ${accessStr}</div>
+      <div style="background: #f0fff8; border: 2px solid ${b.accentColor}; border-radius: 10px; text-align: center; margin: 24px 0; padding: 24px;">
+        <div style="font-size: 22px; font-weight: bold; color: ${b.accentColor};">Facility Open</div>
+        <div style="font-size: 13px; color: #555; margin-top: 8px;">No PIN required — doors will be unlocked for your event</div>
+        <div style="font-size: 13px; color:${b.accentColor}; font-weight:600; margin-top:6px;">Open from ${accessStr}</div>
       </div>
-      <div class="details">
-        <p>📅 <strong>Event:</strong> ${eventName}</p>
-        <p>🕐 <strong>Start:</strong> ${startStr}</p>
-        <p>🕑 <strong>End:</strong>   ${endStr}</p>
+      <div style="background: #f9f9f9; border-radius: 8px; padding: 16px; margin-top: 16px; border-left: 4px solid ${b.accentColor};">
+        <p style="margin: 6px 0; font-size: 14px;">📅 <strong>Event:</strong> ${eventName}</p>
+        <p style="margin: 6px 0; font-size: 14px;">🕐 <strong>Start:</strong> ${startStr}</p>
+        <p style="margin: 6px 0; font-size: 14px;">🕑 <strong>End:</strong>   ${endStr}</p>
       </div>
     </div>
-    <div class="footer">
-      <strong>${b.clubName}</strong><br/>
+    <div style="text-align: center; font-size: 12px; color: #aaa; padding: 20px 16px; border-top: 1px solid #f0f0f0; line-height: 1.8;">
+      <strong style="color: #888;">${b.clubName}</strong><br/>
       ${contactLines ? `${contactLines}<br/>` : ''}
       This is an automated message — please do not reply to this email.
     </div>
@@ -304,61 +292,42 @@ async function sendAccessEmail({ to, memberName, pin, startDate, endDate, courts
     b.address ? `📍 ${b.address}` : '',
   ].filter(Boolean).join('&nbsp;&nbsp;·&nbsp;&nbsp;');
 
+  // Styles are inlined on every element rather than left in a <style> block —
+  // some clients (confirmed: new Outlook desktop) don't reliably apply
+  // class-based CSS from <head> and silently fall back to unstyled text,
+  // which is exactly how the PIN itself was reported rendering unstyled.
   const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8"/>
-  <style>
-    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
-    .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px;
-                 overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
-    .header { background: ${b.headerColor}; color: #fff; padding: 28px 32px; text-align: center; }
-    .header h1 { margin: 0; font-size: 24px; font-weight: 700; }
-    .header .tagline { margin: 6px 0 0; font-size: 13px; opacity: .85; }
-    .body { padding: 32px; color: #333; }
-    .pin-box { background: #f5f7ff; border: 2px dashed ${b.accentColor};
-               border-radius: 10px; text-align: center; margin: 24px 0; padding: 24px; }
-    .pin-box .pin    { font-size: 52px; font-weight: bold; letter-spacing: 14px; color: ${b.accentColor}; }
-    .pin-box .label  { font-size: 13px; color: #666; margin-top: 6px; }
-    .pin-box .active { font-size: 13px; color: ${b.accentColor}; font-weight: 600; margin-top: 6px; }
-    .details { background: #f9f9f9; border-radius: 8px; padding: 16px; margin-top: 16px;
-               border-left: 4px solid ${b.accentColor}; }
-    .details p { margin: 6px 0; font-size: 14px; }
-    .notice { margin-top: 24px; font-size: 13px; color: #777; line-height: 1.6;
-              background: #fffbf0; border-radius: 6px; padding: 12px 16px;
-              border: 1px solid #ffe8a0; }
-    .footer { text-align: center; font-size: 12px; color: #aaa; padding: 20px 16px;
-              border-top: 1px solid #f0f0f0; line-height: 1.8; }
-    .footer strong { color: #888; }
-  </style>
 </head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>${b.clubName}</h1>
-      ${b.tagline ? `<p class="tagline">${b.tagline}</p>` : ''}
+<body style="font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0;">
+  <div style="max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.1);">
+    <div style="background: ${b.headerColor}; color: #fff; padding: 28px 32px; text-align: center;">
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700;">${b.clubName}</h1>
+      ${b.tagline ? `<p style="margin: 6px 0 0; font-size: 13px; opacity: .85;">${b.tagline}</p>` : ''}
     </div>
-    <div class="body">
-      <p style="font-size:16px;">Hi <strong>${memberName}</strong>,</p>
+    <div style="padding: 32px; color: #333;">
+      <p style="font-size:16px; margin:0;">Hi <strong>${memberName}</strong>,</p>
       <p style="margin-top:8px; color:#555;">Your reservation is coming up! Use the PIN below to access the building.</p>
-      <div class="pin-box">
-        <div class="pin">${pin}</div>
-        <div class="label">Enter this PIN at the front door keypad</div>
-        <div class="active">Active from ${accessStr}</div>
+      <div style="background: #f5f7ff; border: 2px dashed ${b.accentColor}; border-radius: 10px; text-align: center; margin: 24px 0; padding: 24px;">
+        <div style="font-size: 52px; font-weight: bold; letter-spacing: 14px; color: ${b.accentColor};">${pin}</div>
+        <div style="font-size: 13px; color: #666; margin-top: 6px;">Enter this PIN at the front door keypad</div>
+        <div style="font-size: 13px; color: ${b.accentColor}; font-weight: 600; margin-top: 6px;">Active from ${accessStr}</div>
       </div>
-      <div class="details">
-        <p>🎾 <strong>${courtLabel}:</strong> ${courtStr}</p>
-        <p>🕐 <strong>Start:</strong> ${startStr}</p>
-        <p>🕑 <strong>End:</strong>   ${endStr}</p>
+      <div style="background: #f9f9f9; border-radius: 8px; padding: 16px; margin-top: 16px; border-left: 4px solid ${b.accentColor};">
+        <p style="margin: 6px 0; font-size: 14px;">🎾 <strong>${courtLabel}:</strong> ${courtStr}</p>
+        <p style="margin: 6px 0; font-size: 14px;">🕐 <strong>Start:</strong> ${startStr}</p>
+        <p style="margin: 6px 0; font-size: 14px;">🕑 <strong>End:</strong>   ${endStr}</p>
       </div>
-      <div class="notice">
+      <div style="margin-top: 24px; font-size: 13px; color: #777; line-height: 1.6; background: #fffbf0; border-radius: 6px; padding: 12px 16px; border: 1px solid #ffe8a0;">
         ⏰ Your PIN becomes active <strong>${accessBufferMinutes} minutes before</strong> your
         reservation at <strong>${accessStr}</strong> and expires when your session ends.
         Please do not share your PIN. Contact the front desk with any questions.
       </div>
     </div>
-    <div class="footer">
-      <strong>${b.clubName}</strong><br/>
+    <div style="text-align: center; font-size: 12px; color: #aaa; padding: 20px 16px; border-top: 1px solid #f0f0f0; line-height: 1.8;">
+      <strong style="color: #888;">${b.clubName}</strong><br/>
       ${contactLines ? `${contactLines}<br/>` : ''}
       This is an automated message — please do not reply to this email.
     </div>
