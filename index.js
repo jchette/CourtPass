@@ -515,6 +515,25 @@ async function deleteVisitor(visitorId) {
   }
 }
 
+function collectDoorsFromTopology(node) {
+  // UniFi nests doors differently across console/firmware versions — some return
+  // a flat `doors[]` on the group, others nest doors under arbitrarily deep
+  // `resource_topologies[]` (building -> floor -> room -> ...) with the door
+  // itself appearing in a `resources[]` array tagged `type: "door"`. Walk both
+  // shapes recursively so either format resolves to the same flat door list.
+  const doors = [];
+  if (Array.isArray(node.doors)) doors.push(...node.doors);
+  if (Array.isArray(node.resources)) {
+    doors.push(...node.resources.filter(r => r.type === 'door'));
+  }
+  if (Array.isArray(node.resource_topologies)) {
+    for (const child of node.resource_topologies) {
+      doors.push(...collectDoorsFromTopology(child));
+    }
+  }
+  return doors;
+}
+
 async function unlockDoor(resourceId, resourceType, durationSeconds) {
   // Unlocks a door or all doors in a door group for a set duration.
   // UniFi automatically relocks to the door's normal schedule when the duration expires.
@@ -524,7 +543,9 @@ async function unlockDoor(resourceId, resourceType, durationSeconds) {
       const resp = await unifi.get('/api/v1/developer/door_groups/topology');
       const group = (resp.data?.data || []).find(g => g.id === resourceId);
       if (!group) { log('warn', 'Door group not found for unlock', { resourceId }); return; }
-      for (const door of (group.doors || [])) {
+      const doors = collectDoorsFromTopology(group);
+      if (doors.length === 0) { log('warn', 'No doors found in group topology', { resourceId }); }
+      for (const door of doors) {
         await unifi.put(`/api/v1/developer/doors/${door.id}/unlock`, { unlock_time_limit: durationSeconds });
         log('info', 'Door unlocked', { doorId: door.id, doorName: door.name, durationSeconds });
       }

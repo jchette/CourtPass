@@ -54,19 +54,27 @@ curl -sk \
   | python3 -m json.tool
 ```
 
-Output example:
+Output example — note that newer consoles nest doors under `resource_topologies` (building → floor → room) rather than a flat `doors[]` array; CourtPin's `unlockDoor()` walks either shape recursively, so both are supported:
 ```json
 {
   "code": "SUCCESS",
   "data": [
     {
       "id": "9bee6e0e-108d-4c52-9107-76f2c7dea4f1",
-      "name": "Main Building",
-      "type": "door_group",
-      "doors": [
+      "name": "Exterior Doors",
+      "type": "access",
+      "resource_topologies": [
         {
-          "id": "6ff875d2-af87-470b-9cb5-774c6596afc8",
-          "name": "Front Door"
+          "id": "d26c406b-a3ae-47a6-af43-b1678275b94c",
+          "name": "1F",
+          "type": "floor",
+          "resources": [
+            {
+              "id": "6ff875d2-af87-470b-9cb5-774c6596afc8",
+              "name": "Front Door",
+              "type": "door"
+            }
+          ]
         }
       ]
     }
