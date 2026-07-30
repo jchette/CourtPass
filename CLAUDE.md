@@ -19,11 +19,11 @@ It is a single-file Node.js application (`index.js`) intentionally kept dependen
 Everything lives in `index.js`, organized into these sections in order:
 
 1. **Configuration** — `config` object built entirely from `process.env`. No hardcoded values anywhere.
-2. **Helpers** — `loadState`, `saveState`, `log`, `toEpoch`, `fmtDate`, `fmtLocalDatetime`, `deriveStaticPin`
+2. **Helpers** — `loadState`, `saveState`, `log`, `toEpoch`, `fmtDate`, `fmtLocalDatetime`, `deriveStaticPin`, `staticPinCandidates`
 3. **HTTP Clients** — `courtreserve` (axios, Basic Auth) and `unifi` (axios, Bearer token, self-signed cert bypass)
 4. **Email** — `sendUnlockNotificationEmail`, `sendUnlockNotificationSms`, `sendAccessEmail`, `_sendEmail` (shared transport helper), `sendAccessSms`
 5. **CourtReserve API** — `fetchTodaysReservations`, `fetchTodaysEventRegistrations`
-6. **UniFi Access API** — `generatePin`, `createVisitor`, `assignPin`, `deleteVisitor`, `unlockDoor`, `fetchExpiredUnifiVisitors`
+6. **UniFi Access API** — `generatePin`, `createVisitor`, `assignPin`, `assignPinWithFallback`, `deleteVisitor`, `unlockDoor`, `fetchExpiredUnifiVisitors`
 7. **Core Processing** — `processReservation`, `processEvents`, `cleanupExpiredVisitors`, `runCycle`
 8. **Admin Server** — `startAdminServer` and session helpers (`generateSessionId`, `isAuthenticated`, `getSessionId`)
 9. **Admin HTML** — `loginPage`, `dashboardPage` (return raw HTML strings, no templating engine)
@@ -57,13 +57,15 @@ One UniFi Visitor + one PIN per player on the reservation. State key: `reservati
 
 Controlled by `PIN_MODE`:
 - `random` (default) — calls UniFi's PIN generation endpoint, works regardless of PIN length constraints
-- `static` — uses the CourtReserve `OrganizationMemberId` as the PIN via `deriveStaticPin()`. Falls back to random if `memberId` is falsy (guests booking without a member ID, e.g.) — this fallback exists in both `processReservation` and `processEvents` and logs a warning only in the reservation path (the event path fails silently by design since guest bookings on events are common and not worth logging every time).
+- `static` — uses the CourtReserve `OrganizationMemberId` as the PIN via `deriveStaticPin()`, assigned through `assignPinWithFallback()`. Falls back to random if `memberId` is falsy (guests booking without a member ID, e.g.) — this fallback exists in both `processReservation` and `processEvents` and logs a warning only in the reservation path (the event path fails silently by design since guest bookings on events are common and not worth logging every time).
 
 `STATIC_PIN_LENGTH` controls truncation when `PIN_MODE=static`:
 - `full` (default) — uses the entire member ID regardless of length
 - a number (e.g. `4`) — truncates to the last N digits via `.slice(-N)`
 
-**Known real-world issue:** UniFi Access sites enrolled in a **UniFi Fabric** (multi-site management) have a confirmed Ubiquiti bug where PIN Length is locked to Fixed 4-digit and cannot be changed to Variable Length, even though the UI shows the option. This is why `STATIC_PIN_LENGTH` exists — set it to `4` to work around the bug. Confirmed with UniFi support as a platform bug, not fixable from CourtPin's side.
+**PIN collision fallback:** UniFi enforces PIN uniqueness across active credentials, but only ever returns a PIN hash on reads — never plaintext — so a collision can't be checked for in advance, only discovered when `assignPin()` itself fails. With a short `STATIC_PIN_LENGTH` (e.g. `4`, a 10,000-value keyspace), two different members can derive the same truncated PIN; this became a real production incident (three collision pairs found across the membership list). `assignPinWithFallback()` (called from both `processReservation` and `processEvents`) handles this by retrying with `staticPinCandidates()` — a ladder of increasingly long digit counts from the configured base length up to the member's full ID — and if every static-length candidate still collides, falls back to a fully random, UniFi-generated PIN as the last resort. Do not revert this to a single direct `deriveStaticPin()` + `assignPin()` call — it reintroduces the collision bug.
+
+**UniFi Fabric PIN length — not a bug, a hidden setting:** what looked initially like a confirmed Ubiquiti platform bug (PIN Length stuck at Fixed 4-digit on Fabric-enrolled sites, even though the UI showed a Variable Length option) turned out to be a setting, not a bug. Fabric's **Identity Settings** default "Smart Door Access" to **All**, which forces Fixed 4-digit PINs; switching it to **Custom** exposes the actual PIN length/type controls. `STATIC_PIN_LENGTH` remains useful even after fixing this — it's still the default/preferred PIN length for clubs that want a specific length — but it's no longer a mandatory workaround for a platform limitation.
 
 ---
 
@@ -156,6 +158,6 @@ Releases are tagged on GitHub (`github.com/jchette/courtpin/releases`) following
 - `docs/unifi-setup.md` — API token creation, door group IDs, port forwarding, Cloudflare Tunnel
 - `docs/email-setup.md` — Resend setup, SMTP setup (including provider-specific settings and Gmail app passwords), local SMTP servers
 - `docs/admin-portal.md` — using the PIN lookup/resend portal
-- `docs/troubleshooting.md` — symptom → cause → fix, including the UniFi Fabric PIN-length bug
+- `docs/troubleshooting.md` — symptom → cause → fix, including the UniFi Fabric PIN-length setting
 
 Keep these in sync when changing behavior — this project has been burned before by docs drifting out of date after a code change (see the SMS STOP-line and PIN_MODE doc-sync fixes in project history). When you change a env var's behavior or add a new one, update `env.example`, `docs/configuration.md`, and the README feature list in the same pass.

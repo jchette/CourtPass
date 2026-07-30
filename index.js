@@ -90,8 +90,9 @@ const config = {
   // events — not per-booking.
   //   full — use the entire OrganizationMemberId, whatever length it is (default)
   //   4/6/8/etc — use only the last N digits of the OrganizationMemberId
-  //               (needed for UniFi installs where PIN length is locked to a
-  //               fixed length, e.g. sites enrolled in a UniFi Fabric)
+  //               (matches a fixed PIN length configured on the UniFi side,
+  //               e.g. Fabric sites defaulting Smart Door Access to Fixed 4-digit —
+  //               see docs/troubleshooting.md for the Fabric Identity Settings fix)
   staticPinLength: process.env.STATIC_PIN_LENGTH || 'full',
   events: {
     // How door access is granted to event registrants:
@@ -157,6 +158,23 @@ function deriveStaticPin(memberId) {
   if (!length || length <= 0) return idStr; // invalid value — fall back to full ID
 
   return idStr.slice(-length); // last N digits
+}
+
+function staticPinCandidates(memberId) {
+  // Two different members can share the same last-N digits of their member ID
+  // (e.g. STATIC_PIN_LENGTH=4 has only 10,000 possible values), and UniFi
+  // rejects assigning a PIN that's already active on another visitor. Builds
+  // a ladder of increasingly specific candidates — starting at the configured
+  // length and growing one digit at a time up to the full member ID — so a
+  // collision on the short PIN can be retried with a longer, less-likely-to-
+  // collide one instead of failing outright.
+  const idStr = String(memberId);
+  const base  = deriveStaticPin(memberId);
+  const candidates = [base];
+  for (let len = base.length + 1; len <= idStr.length; len++) {
+    candidates.push(idStr.slice(-len));
+  }
+  return candidates;
 }
 
 // ─── HTTP Clients ─────────────────────────────────────────────────────────────
@@ -528,6 +546,34 @@ async function assignPin(visitorId, pin) {
   if (resp.data?.code !== 'SUCCESS') throw new Error(`Assign PIN failed: ${JSON.stringify(resp.data)}`);
 }
 
+async function assignPinWithFallback(visitorId, memberId) {
+  // UniFi only returns a PIN hash on reads, never plaintext, so there is no
+  // way to check whether a candidate PIN is already in use before attempting
+  // the assignment — a collision can only be discovered by the assignment
+  // itself failing. In PIN_MODE=static, retry with progressively longer
+  // digit counts (see staticPinCandidates) before giving up and assigning a
+  // fully random, UniFi-generated PIN as the last resort.
+  if (config.pinMode !== 'static' || !memberId) {
+    const pin = await generatePin();
+    await assignPin(visitorId, pin);
+    return pin;
+  }
+
+  for (const candidate of staticPinCandidates(memberId)) {
+    try {
+      await assignPin(visitorId, candidate);
+      return candidate;
+    } catch (err) {
+      log('warn', 'Static PIN candidate rejected — trying a longer PIN', { memberId, length: candidate.length, err: err.message });
+    }
+  }
+
+  const pin = await generatePin();
+  await assignPin(visitorId, pin);
+  log('warn', 'All static PIN candidates collided — assigned a random PIN instead', { memberId });
+  return pin;
+}
+
 async function deleteVisitor(visitorId) {
   const resp = await unifi.delete(`/api/v1/developer/visitors/${visitorId}`, { params: { is_force: true } });
   if (resp.data?.code !== 'SUCCESS') {
@@ -678,21 +724,16 @@ async function processReservation(reservation, state) {
 
     // 2. Generate and assign PIN
     // PIN_MODE=random (default) — new random PIN each reservation via UniFi API
-    // PIN_MODE=static           — uses CourtReserve OrganizationMemberId as PIN
-    //                             requires UniFi Access PIN mode set to Variable Length
-    //                             Access → Settings → General → PIN → Variable Length
+    // PIN_MODE=static           — uses CourtReserve OrganizationMemberId as PIN,
+    //                             falling back to a longer/random PIN on collision
+    //                             (see assignPinWithFallback)
     //                             falls back to random if member ID is missing
     let pin;
     try {
-      if (config.pinMode === 'static' && memberId) {
-        pin = deriveStaticPin(memberId);
-      } else {
-        if (config.pinMode === 'static' && !memberId) {
-          log('warn', 'Static PIN mode set but member ID missing — falling back to random PIN', { reservationId });
-        }
-        pin = await generatePin();
+      if (config.pinMode === 'static' && !memberId) {
+        log('warn', 'Static PIN mode set but member ID missing — falling back to random PIN', { reservationId });
       }
-      await assignPin(visitor.id, pin);
+      pin = await assignPinWithFallback(visitor.id, memberId);
     } catch (err) {
       log('error', 'Failed to generate/assign PIN', { visitorId: visitor.id, err: err.message });
       await deleteVisitor(visitor.id).catch(() => {});
@@ -791,8 +832,7 @@ async function processEvents(registrations, state) {
 
         let pin;
         try {
-          pin = config.pinMode === 'static' && memberId ? deriveStaticPin(memberId) : await generatePin();
-          await assignPin(visitor.id, pin);
+          pin = await assignPinWithFallback(visitor.id, memberId);
         } catch (err) {
           log('error', 'Failed to assign PIN for event registrant', { stateKey, err: err.message });
           await deleteVisitor(visitor.id).catch(() => {});
