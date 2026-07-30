@@ -112,6 +112,7 @@ On a local machine there are no port restrictions — use your existing email ho
 | `SMTP_SECURE` | No | `false` | Set `true` only for port 465. Leave `false` for port 587. |
 | `SMTP_USER` | If using SMTP | — | SMTP username — usually your full email address. |
 | `SMTP_PASS` | If using SMTP | — | SMTP password or app password. |
+| `SMTP_DEBUG` | No | `false` | Set `true` to log the full SMTP conversation (including AUTH) for troubleshooting delivery failures. Turn back off afterward — verbose and not needed in normal operation. |
 | `EMAIL_FROM` | Yes | — | Sender address — must match your SMTP account domain. |
 
 **Common SMTP settings by provider:**

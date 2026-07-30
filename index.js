@@ -56,6 +56,7 @@ const config = {
       secure: process.env.SMTP_SECURE === 'true', // true for port 465, false for 587/STARTTLS
       user:   process.env.SMTP_USER   || '',
       pass:   process.env.SMTP_PASS   || '',
+      debug:  process.env.SMTP_DEBUG === 'true', // logs the full SMTP conversation incl. AUTH — troubleshooting only, disable after use
     },
   },
   twilio: {
@@ -369,8 +370,27 @@ async function _sendEmail(to, subject, html) {
       port:   config.email.smtp.port,
       secure: config.email.smtp.secure,
       auth:   { user: config.email.smtp.user, pass: config.email.smtp.pass },
+      logger: config.email.smtp.debug,
+      debug:  config.email.smtp.debug,
     });
-    await transporter.sendMail({ from: config.email.from, to, subject, html });
+    try {
+      await transporter.sendMail({ from: config.email.from, to, subject, html });
+    } catch (err) {
+      // nodemailer attaches these fields for SMTP-level failures (auth, TLS, relay
+      // rejection) — surface them here since callers otherwise only log err.message.
+      log('error', 'SMTP send failed', {
+        to,
+        host:         config.email.smtp.host,
+        port:         config.email.smtp.port,
+        secure:       config.email.smtp.secure,
+        code:         err.code,
+        responseCode: err.responseCode,
+        response:     err.response,
+        command:      err.command,
+        message:      err.message,
+      });
+      throw err;
+    }
   }
 }
 
