@@ -495,6 +495,11 @@ async function generatePin() {
   return resp.data.data;
 }
 
+// Marks visitors CourtPin creates so cleanupExpiredVisitors' orphan pass can
+// tell them apart from visitors created by staff or other integrations —
+// see CREATED_BY_MARKER usage in fetchExpiredUnifiVisitors().
+const CREATED_BY_MARKER = 'Created by CourtPin';
+
 async function createVisitor({ firstName, lastName, email, phone, startTime, endTime }) {
   const resp = await unifi.post('/api/v1/developer/visitors', {
     first_name:   firstName,
@@ -504,6 +509,7 @@ async function createVisitor({ firstName, lastName, email, phone, startTime, end
     start_time:   startTime,
     end_time:     endTime,
     visit_reason: 'Others',
+    remarks:      CREATED_BY_MARKER,
     resources:    config.unifi.resources,
   });
   if (resp.data?.code !== 'SUCCESS') throw new Error(`Create visitor failed: ${JSON.stringify(resp.data)}`);
@@ -598,16 +604,20 @@ async function unlockDoor(resourceId, resourceType, durationSeconds) {
 }
 
 async function fetchExpiredUnifiVisitors() {
-  // Fetch all visitors from UniFi whose end_time has already passed.
-  // This catches orphaned visitors that CourtPin lost track of due to
-  // a state file reset (e.g. Railway restarting and clearing /tmp/state.json).
+  // Fetch expired-and-CourtPin-created visitors from UniFi. This catches
+  // orphaned visitors that CourtPin lost track of due to a state file reset
+  // (e.g. Railway restarting and clearing /tmp/state.json). Scoped to the
+  // CREATED_BY_MARKER remarks tag so this orphan sweep never deletes visitors
+  // created by staff or another integration — only ones CourtPin made itself.
   try {
     const resp = await unifi.get('/api/v1/developer/visitors', {
       params: { page_num: 1, page_size: 200 },
     });
     if (resp.data?.code !== 'SUCCESS') return [];
     const nowSec = Math.floor(Date.now() / 1000);
-    return (resp.data.data || []).filter(v => v.end_time && v.end_time < nowSec);
+    return (resp.data.data || []).filter(v =>
+      v.end_time && v.end_time < nowSec && v.remarks === CREATED_BY_MARKER
+    );
   } catch (err) {
     log('warn', 'Could not fetch visitor list from UniFi', { err: err.message });
     return [];

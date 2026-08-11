@@ -161,6 +161,7 @@ Failed to generate/assign PIN {"err":"PIN generation failed:..."}
 1. Railway service is still running (Deployments tab)
 2. `CLEANUP_BUFFER_MINUTES` is set correctly (default: 15)
 3. UniFi API token is still valid and has `edit:visitor` permission
+4. The visitor was actually created by CourtPin. CourtPin's automatic cleanup only removes visitors it created itself (tagged internally via the Remarks field) — visitors added manually in the UniFi Access UI, or by another integration, are left alone by design and must be deleted manually.
 
 ---
 
