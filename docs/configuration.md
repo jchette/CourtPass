@@ -49,6 +49,9 @@ ACCESS_BUFFER_MINUTES=30
 CLEANUP_BUFFER_MINUTES=15
 TZ=America/New_York
 STATE_FILE=/tmp/state.json
+AUTO_CHECKIN_ENABLED=false
+CHECKIN_WEBHOOK_SECRET=
+CHECKIN_STATUS_ID=
 ```
 
 > **Note on hex colors:** Railway treats `#` as a comment character. Enter hex colors **without** the `#` symbol. For `#1a56db` enter `1a56db`. The code adds it automatically.
@@ -184,3 +187,15 @@ Find hex color codes at [htmlcolorcodes.com](https://htmlcolorcodes.com).
 | `CLEANUP_BUFFER_MINUTES` | No | `15` | Minutes after reservation end before the Visitor record is deleted and PIN revoked. |
 | `TZ` | Yes on Railway | — | Your facility's timezone. **Critical on Railway** which runs in UTC. Examples: `America/New_York`, `America/Chicago`, `America/Denver`, `America/Los_Angeles`. Full list: [Wikipedia — tz database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). |
 | `STATE_FILE` | No | `./state.json` | Path to the state persistence file. Use `/tmp/state.json` on Railway. |
+
+---
+
+## Auto Check-In (optional)
+
+When enabled, entering a PIN at the door also submits a CourtReserve check-in for that member automatically — no separate kiosk touch needed. Reuses `CR_ORG_ID`/`CR_API_KEY` above; no new CourtReserve credentials required, but the API key needs the **Check-In** role (Write permission) enabled. v1 scope is plain court reservations only, not event registrations. Full setup (including the UniFi Alarm Manager webhook configuration) is in [auto-checkin.md](auto-checkin.md).
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `AUTO_CHECKIN_ENABLED` | No | `false` | Set `true` to enable the `/webhook/unifi-unlock` endpoint. When `false`, the endpoint returns a plain 404. |
+| `CHECKIN_WEBHOOK_SECRET` | If enabled | — | Shared secret checked against the webhook URL's `?secret=` query param. UniFi's Alarm Manager has no HMAC signing, so this is the only available auth mechanism. Generate a long random string. |
+| `CHECKIN_STATUS_ID` | If your org uses custom Check-In Statuses | — | Some CourtReserve orgs have Settings → Check-In Statuses enabled, in which case the API rejects a check-in without a status ID. Find yours via `https://app.courtreserve.com/CheckInStatus/GetCheckInStatuses` while logged into CourtReserve admin — use the `Id` for "Checked-In" (or your org's equivalent). Leave blank if your org doesn't use custom statuses. |

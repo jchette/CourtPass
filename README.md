@@ -28,6 +28,8 @@ Every minute:
 
 Multi-player reservations are fully supported — every player gets their own Visitor record and unique PIN.
 
+Optionally, entering that PIN at the door can also submit the member's CourtReserve check-in automatically — see [docs/auto-checkin.md](docs/auto-checkin.md).
+
 ---
 
 ## Example timeline
@@ -86,6 +88,7 @@ All detailed guides live in the `docs/` folder:
 | [docs/unifi-setup.md](docs/unifi-setup.md) | API token creation, door group IDs, port forwarding, Cloudflare Tunnel |
 | [docs/email-setup.md](docs/email-setup.md) | Resend setup, SMTP setup, Gmail app passwords, local SMTP servers |
 | [docs/admin-portal.md](docs/admin-portal.md) | Using the mobile-friendly PIN lookup and resend portal |
+| [docs/auto-checkin.md](docs/auto-checkin.md) | Automatic CourtReserve check-in on door PIN entry (optional) |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Every known issue with symptoms, causes, and fixes |
 
 ---

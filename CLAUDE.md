@@ -10,7 +10,7 @@ CourtPin connects [CourtReserve](https://courtreserve.com) (court/event booking 
 
 It is a single-file Node.js application (`index.js`) intentionally kept dependency-light and framework-free. There is no build step, no TypeScript, no database. State is a flat JSON file.
 
-**Primary deployment target right now:** a Raspberry Pi running on the same local network as the UniFi console (no port forwarding needed — see "Deployment context" below). Railway (cloud) is the secondary/alternate deployment path, documented as an option for setups that don't want local hardware.
+**Primary deployment target right now:** a Raspberry Pi running on the same local network as the UniFi console (no port forwarding needed — see "Deployment context" below). Railway (cloud) is the secondary/alternate deployment path, documented as an option for setups that don't want local hardware. **Caveat confirmed via the Railway dashboard directly (service showing "Online", logs actively flowing) as of 2026-08-17: this specific installation is still running on Railway, not the Pi** — the migration described below has not actually happened for it yet, despite this file describing it in the past tense. Verify current deployment target before assuming either one without checking (e.g. Railway dashboard, or whether the Pi is reachable) — this file has been wrong about it before.
 
 ---
 
@@ -19,13 +19,13 @@ It is a single-file Node.js application (`index.js`) intentionally kept dependen
 Everything lives in `index.js`, organized into these sections in order:
 
 1. **Configuration** — `config` object built entirely from `process.env`. No hardcoded values anywhere.
-2. **Helpers** — `loadState`, `saveState`, `log`, `toEpoch`, `fmtDate`, `fmtLocalDatetime`, `deriveStaticPin`, `staticPinCandidates`
+2. **Helpers** — `loadState`, `saveState`, `findProcessedByVisitorId`, `log`, `toEpoch`, `fmtDate`, `fmtLocalDatetime`, `deriveStaticPin`, `staticPinCandidates`
 3. **HTTP Clients** — `courtreserve` (axios, Basic Auth) and `unifi` (axios, Bearer token, self-signed cert bypass)
 4. **Email** — `sendUnlockNotificationEmail`, `sendUnlockNotificationSms`, `sendAccessEmail`, `_sendEmail` (shared transport helper), `sendAccessSms`
-5. **CourtReserve API** — `fetchTodaysReservations`, `fetchTodaysEventRegistrations`
+5. **CourtReserve API** — `fetchTodaysReservations`, `fetchTodaysEventRegistrations`, `submitCourtReserveCheckIn`
 6. **UniFi Access API** — `generatePin`, `createVisitor`, `assignPin`, `assignPinWithFallback`, `deleteVisitor`, `unlockDoor`, `fetchExpiredUnifiVisitors`
-7. **Core Processing** — `processReservation`, `processEvents`, `cleanupExpiredVisitors`, `runCycle`
-8. **Admin Server** — `startAdminServer` and session helpers (`generateSessionId`, `isAuthenticated`, `getSessionId`)
+7. **Core Processing** — `processReservation`, `processEvents`, `cleanupExpiredVisitors`, `processUnlockWebhookEvent`, `runCycle`
+8. **Admin Server** — `startAdminServer` (includes the public `/webhook/unifi-unlock` route) and session helpers (`generateSessionId`, `isAuthenticated`, `getSessionId`)
 9. **Admin HTML** — `loginPage`, `dashboardPage` (return raw HTML strings, no templating engine)
 10. **Entrypoint** — `validateConfig`, `main`
 
@@ -104,6 +104,7 @@ A `Dockerfile` is intentionally **not** committed to the repo root — Railway a
 - `GET /api/v1/eventregistrationreport/listactive` — requires `EventRegistrationReport` role with Read permission (separate role from reservations, must be enabled explicitly on the API key). Returns one row per registrant with `EventId`, `EventDateId`, `EventName`, `StartTime`, `EndTime`, `OrganizationMemberId`, `FirstName`, `LastName`, `Email`, `Phone`.
 - Both endpoints are queried for **today's date range only** (`startOfDay` to `endOfDay` in local time), not a rolling window. This is intentional — `StartTime`/`EndTime` come back with no timezone suffix, so the query and all time math assumes the `TZ` env var matches the facility's actual timezone. Getting `TZ` wrong is the most common real-world bug reported (see `docs/troubleshooting.md`).
 - Date range parameters cannot exceed 31 days per CourtReserve's API constraints (documented behavior, not a CourtPin limitation).
+- `POST /api/v1/checkins` — requires the `Check-In` role with Write permission (used by the optional Auto Check-In feature). Not guaranteed to be an assignable role for every organization — see the "Auto Check-In" section below. Conditionally requires `CheckInStatusId` in the request body depending on org config — see the same section.
 
 ## UniFi Access API notes
 
@@ -112,6 +113,24 @@ A `Dockerfile` is intentionally **not** committed to the repo root — Railway a
 - `unlockDoor()` handles both `door` and `door_group` resource types from `UNIFI_RESOURCES` — for a `door_group` it first fetches the group's topology to enumerate individual door IDs, then unlocks each one separately (there's no single "unlock this whole group" endpoint). Door-group topology responses are not a consistent shape across consoles/firmware — some return a flat `doors[]` array, others (confirmed in production) nest doors arbitrarily deep under `resource_topologies[]` (e.g. `building → floor → resources[]`, `type: "door"`). `collectDoorsFromTopology()` walks both shapes recursively; don't go back to a flat `group.doors || []` read, it silently finds zero doors on nested-shape consoles.
 - Once a PIN is assigned, UniFi's API only returns a hash on future reads — the plaintext PIN is unrecoverable from UniFi's side. This is why CourtPin persists the PIN in `state.json` and logs at creation time — it's the only source of truth for the admin portal's PIN lookup/resend feature. This also means a PIN collision can only ever be discovered by attempting `assignPin()` and having it fail — there's no way to check "is this PIN already active" in advance (see `assignPinWithFallback()` in the PIN generation modes section above).
 - Every visitor `createVisitor()` creates is tagged via the `remarks` field with a fixed marker (`CREATED_BY_MARKER = 'Created by CourtPin'`). `fetchExpiredUnifiVisitors()` — the orphan-recovery pass in `cleanupExpiredVisitors()` — filters on this tag so it only ever deletes visitors CourtPin itself created, never visitors added manually by staff or by another integration. `remarks` was confirmed as a genuine free-text field (distinct from the enum-constrained `visit_reason`, which only accepts `Interview`/`Business`/`Cooperation`/`Others`) against Ubiquiti's official Visitor API schema (PDF, p. 52–53) before relying on it. Visitors created before this tagging existed won't carry the marker — a one-time manual cleanup in the UniFi console is needed for any pre-existing orphans, but that's a non-issue if state.json was empty when this shipped.
+
+---
+
+## Auto Check-In (optional, `AUTO_CHECKIN_ENABLED`)
+
+A UniFi Access PIN-code door unlock can automatically submit a CourtReserve check-in for that member — no separate kiosk touch needed. Full user-facing setup is `docs/auto-checkin.md`; the CourtReserve OpenAPI spec (trimmed to relevant endpoints) is saved at `docs/courtreserve-openapi-organization.json`. Design/research history — including an earlier, abandoned kiosk-session-replication approach — is in `docs/pin-checkin-integration-notes.md`.
+
+**Flow:** UniFi's Alarm Manager POSTs to the public `/webhook/unifi-unlock?secret=...` route (Admin Server section, placed **before** the `isAuthenticated` gate — it can't use session auth since UniFi is the caller) → `processUnlockWebhookEvent()` filters to `credential_type === 'PIN_CODE'` and `direction === 'entered'` only, reverse-looks-up the event's `user` UUID against `state.processed` via `findProcessedByVisitorId()` (confirmed in production: this UUID is an exact match for the `visitorId` CourtPin already stores) → calls `submitCourtReserveCheckIn(reservationId, memberId)`, which POSTs to CourtReserve's official `POST /api/v1/checkins` using the existing Basic Auth `courtreserve` client (no separate HTTP client, no cookie jar, no kiosk registration needed).
+
+**v1 scope is plain court reservations only, not event registrations.** `reservationId` is stored on reservation state entries (`processReservation`) specifically to support this; event-derived entries (`pin_individual`/`pin_shared`/`unlock`) don't carry a `reservationId` because the Event Registration Report API doesn't expose one (only `EventId`/`EventDateId` — the underlying reservation ID lives on a different endpoint, `/api/v1/eventcalendar/eventlist`, not currently called). `processUnlockWebhookEvent()` matches these entries but skips them (`unsupported_entry_type`) rather than guessing. Don't "fix" this by wiring in a second CourtReserve call per event without discussing the added complexity first.
+
+**Idempotency:** a successful check-in stamps `checkedInAt` on the matched state entry; repeat/duplicate webhook deliveries for the same entry are skipped (`already_checked_in`) rather than re-submitting. Don't remove this guard — CourtReserve's own API doesn't appear to no-op a duplicate check-in on its own.
+
+**Auth for the webhook route is a shared secret in the URL query string (`CHECKIN_WEBHOOK_SECRET`), not HMAC signing.** UniFi's Alarm Manager UI only exposes a plain Delivery URL field — there's no signing option to use instead, so this is the only mechanism available. Treat it as a low-value shared secret (visible in UniFi's config UI and plain HTTP logs), not a real credential.
+
+**`CheckInStatusId` may be required — this is org-specific, not universal.** Confirmed in production: an org with CourtReserve's "Check-In Statuses" feature enabled (Settings → Check-In Statuses) rejects `/api/v1/checkins` calls without a `CheckInStatusId` (`"CheckInStatusId is required because this organization uses check-in statuses."`). The admin UI for that settings page shows status names only, not IDs — the numeric ID has to be pulled from the underlying `GET /CheckInStatus/GetCheckInStatuses` call (not a public API endpoint, just what the CourtReserve admin frontend itself calls) while logged into CourtReserve admin. `CHECKIN_STATUS_ID` is optional in `config.checkin` — only included in the request payload when set — since orgs without this feature don't need it.
+
+**The `Check-In` API role is not guaranteed to be assignable on a scoped CourtReserve API key.** Confirmed in production: one org's API-key role list (Settings → API Access) simply doesn't include `Check-In` as an option, even though it's a documented role in CourtReserve's OpenAPI spec. A scoped key without it gets a flat `{"Message":"Authorization has been denied for this request."}` — a framework-level rejection before check-in logic even runs, distinct from the normal `GenericEnterpriseApiResponse` envelope (`ErrorMessage`/`Data`/`IsSuccessStatusCode`) every other endpoint in this codebase returns on failure. If this happens, the fix is contacting CourtReserve support to enable the role for that organization — not silently switching every install to an unrestricted/full-access token. **This specific installation is currently running with a full-access token in `CR_API_KEY` as an interim measure** while that support request is pending; this is a deliberate, known tradeoff (wider blast radius if the key leaks) accepted by the project owner, not an oversight — don't "fix" it by reverting without checking whether the scoped-role fix has landed.
 
 ---
 
@@ -133,6 +152,7 @@ Routes:
 - `GET /admin` — dashboard, requires auth
 - `POST /admin/resend` — re-sends PIN email/SMS for a given `reservationId`/`playerId` pair, requires auth
 - `GET /health` — no auth, basic liveness check
+- `POST /webhook/unifi-unlock` — no session auth (shared-secret `?secret=` query param instead); accepts UniFi Access Alarm Manager webhook deliveries for the optional Auto Check-In feature (see that section above). Returns 404 when `AUTO_CHECKIN_ENABLED` is false.
 
 Dashboard cards show a yellow badge (`Event`, `Event (shared PIN)`, or `Event (door unlock)`) to visually distinguish event-derived access from reservation-derived access — see the `isEvent`/`typeLabel` logic in `dashboardPage()`.
 
@@ -149,6 +169,8 @@ Dashboard cards show a yellow badge (`Event`, `Event (shared PIN)`, or `Event (d
 - **Don't revert the email templates' inlined `style="..."` attributes back to a `<style>` block with classes.** New Outlook desktop doesn't reliably apply class-based CSS and silently renders unstyled text — confirmed in production on the PIN display.
 - **Don't revert `assignPinWithFallback()`/`staticPinCandidates()` back to a single direct `deriveStaticPin()` + `assignPin()` call.** Two members can derive the same truncated static PIN (confirmed in production — three collision pairs found), and UniFi enforces PIN uniqueness across active credentials without any way to check in advance.
 - **Don't remove the `remarks: CREATED_BY_MARKER` tag from `createVisitor()` or the `v.remarks === CREATED_BY_MARKER` filter in `fetchExpiredUnifiVisitors()`.** Without it, the orphan-recovery pass in `cleanupExpiredVisitors()` would delete *any* expired visitor in UniFi — including ones created manually by staff or by another integration, not just CourtPin's own.
+- **Don't remove the `checkedInAt` idempotency guard in `processUnlockWebhookEvent()`**, and don't wire up auto check-in for event-derived (`pin_individual`/`pin_shared`/`unlock`) state entries without first discussing the added CourtReserve API call needed to resolve their `reservationId` — see the "Auto Check-In" section above.
+- **Don't assume `CR_API_KEY` is a narrowly-scoped key.** This installation currently runs it as a full-access/unrestricted token as a deliberate interim measure (the `Check-In` role wasn't assignable on a scoped key for this org) — see "Auto Check-In" above. Don't add code that relies on this being scoped, and flag it if you notice it should have been narrowed back down by the time you're reading this.
 
 ---
 
@@ -171,6 +193,8 @@ Releases are tagged on GitHub (`github.com/jchette/courtpin/releases`) following
 - `docs/unifi-setup.md` — API token creation, door group IDs, port forwarding, Cloudflare Tunnel
 - `docs/email-setup.md` — Resend setup, SMTP setup (including provider-specific settings and Gmail app passwords), local SMTP servers
 - `docs/admin-portal.md` — using the PIN lookup/resend portal
+- `docs/auto-checkin.md` — optional PIN-unlock → CourtReserve check-in feature: setup, `CheckInStatusId`/`Check-In` role gotchas, known limitations
+- `docs/courtreserve-openapi-organization.json` — trimmed CourtReserve OpenAPI reference (Check-In, Reservation Report, Event Registration Report, Event Calendar, Attendance Report)
 - `docs/troubleshooting.md` — symptom → cause → fix, including the UniFi Fabric PIN-length setting
 
 Keep these in sync when changing behavior — this project has been burned before by docs drifting out of date after a code change (see the SMS STOP-line and PIN_MODE doc-sync fixes in project history). When you change a env var's behavior or add a new one, update `env.example`, `docs/configuration.md`, and the README feature list in the same pass.

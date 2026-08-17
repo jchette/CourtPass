@@ -104,6 +104,22 @@ const config = {
     // unlock mode only: send an email/SMS notification that the facility is open
     unlockNotify:        process.env.EVENT_UNLOCK_NOTIFY === 'true',
   },
+  checkin: {
+    // Optional feature: a UniFi Access PIN-code door unlock automatically submits
+    // a CourtReserve check-in for that member, via POST /api/v1/checkins — reuses
+    // the existing CR_ORG_ID/CR_API_KEY Basic Auth (requires the Check-In role
+    // with Write permission enabled on that key). See docs/auto-checkin.md.
+    enabled:       process.env.AUTO_CHECKIN_ENABLED === 'true',
+    webhookSecret: process.env.CHECKIN_WEBHOOK_SECRET || '',
+    // Some CourtReserve orgs have "check-in statuses" enabled (Settings →
+    // Check-In Statuses), in which case the API rejects a check-in without a
+    // CheckInStatusId — confirmed in production ("CheckInStatusId is required
+    // because this organization uses check-in statuses"). Not every org needs
+    // this, so it's optional here; leave unset if your org doesn't use custom
+    // statuses. Find the numeric ID via /CheckInStatus/GetCheckInStatuses on
+    // your CourtReserve admin domain (see docs/auto-checkin.md).
+    statusId:      process.env.CHECKIN_STATUS_ID ? parseInt(process.env.CHECKIN_STATUS_ID, 10) : null,
+  },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -123,6 +139,10 @@ function loadState() {
 
 function saveState(state) {
   fs.writeFileSync(config.stateFile, JSON.stringify(state, null, 2));
+}
+
+function findProcessedByVisitorId(state, visitorId) {
+  return Object.entries(state.processed).find(([, v]) => v.visitorId === visitorId);
 }
 
 function log(level, msg, meta = {}) {
@@ -487,6 +507,24 @@ async function fetchTodaysEventRegistrations() {
   return resp.data.Data || [];
 }
 
+// Submits a CourtReserve check-in for a member on a specific reservation —
+// used by the auto check-in webhook (see processUnlockWebhookEvent). Reuses
+// the existing Basic Auth courtreserve client; requires the Check-In role
+// (Write permission) enabled on CR_API_KEY.
+async function submitCourtReserveCheckIn(reservationId, memberId) {
+  const payload = {
+    ReservationId: reservationId,
+    OrganizationMemberId: memberId,
+  };
+  if (config.checkin.statusId) payload.CheckInStatusId = config.checkin.statusId;
+
+  const resp = await courtreserve.post('/api/v1/checkins', payload);
+  if (!resp.data?.IsSuccessStatusCode) {
+    throw new Error(resp.data?.ErrorMessage || 'CourtReserve check-in failed');
+  }
+  return resp.data.Data; // CheckInApiResultDto — IsCheckedIn, CheckedInOn, etc.
+}
+
 // ─── UniFi Access API ─────────────────────────────────────────────────────────
 
 async function generatePin() {
@@ -739,6 +777,7 @@ async function processReservation(reservation, state) {
     state.processed[playerKey] = {
       visitorId:   visitor.id,
       memberId,
+      reservationId: reservation.Id, // needed for POST /api/v1/checkins (auto check-in webhook)
       email,
       pin,
       memberName,
@@ -974,6 +1013,53 @@ async function cleanupExpiredVisitors(state) {
   }
 }
 
+// Handles one event from the UniFi Access unlock webhook (see the
+// /webhook/unifi-unlock route in the Admin Server section). Only plain
+// court-reservation entries carry a reservationId in v1 — event-derived
+// entries (pin_individual/pin_shared/unlock) are matched but skipped, since
+// the Event Registration Report doesn't expose a ReservationId to check in
+// against (see docs/auto-checkin.md).
+async function processUnlockWebhookEvent(event, state) {
+  if (event.credential_type !== 'PIN_CODE' || event.direction !== 'entered') {
+    return { skipped: true, reason: 'not_pin_entry' };
+  }
+
+  const visitorId = event.user;
+  if (!visitorId) {
+    log('warn', 'Unlock webhook PIN event missing user UUID', { deviceName: event.device_name });
+    return { skipped: true, reason: 'no_user_uuid' };
+  }
+
+  const match = findProcessedByVisitorId(state, visitorId);
+  if (!match) {
+    log('info', 'No CourtPin record found for unlock webhook visitorId', { visitorId, userName: event.user_name });
+    return { skipped: true, reason: 'no_match' };
+  }
+
+  const [key, entry] = match;
+
+  if (!entry.memberId || !entry.reservationId) {
+    log('info', 'Matched entry missing memberId/reservationId — auto check-in not supported for this entry type', { key, visitorId, type: entry.type });
+    return { skipped: true, reason: 'unsupported_entry_type' };
+  }
+
+  if (entry.checkedInAt) {
+    log('debug', 'Already auto-checked-in — skipping duplicate webhook', { key, memberId: entry.memberId });
+    return { skipped: true, reason: 'already_checked_in' };
+  }
+
+  try {
+    const result = await submitCourtReserveCheckIn(entry.reservationId, entry.memberId);
+    entry.checkedInAt = Math.floor(Date.now() / 1000);
+    saveState(state);
+    log('info', '✅ Auto check-in submitted via PIN unlock webhook', { key, memberId: entry.memberId, reservationId: entry.reservationId, isCheckedIn: result?.IsCheckedIn });
+    return { skipped: false, key, memberId: entry.memberId };
+  } catch (err) {
+    log('error', 'Auto check-in via webhook failed', { key, memberId: entry.memberId, reservationId: entry.reservationId, err: err.message });
+    return { skipped: true, reason: 'checkin_failed', error: err.message };
+  }
+}
+
 let cycleInProgress = false;
 
 async function runCycle() {
@@ -1054,6 +1140,33 @@ function startAdminServer() {
 
     // Health check (no auth)
     if (url.pathname === '/health') return sendJson(200, { status: 'ok', uptime: Math.floor(process.uptime()) });
+
+    // Auto check-in webhook (no session auth — shared-secret query param instead,
+    // since UniFi's Alarm Manager UI only exposes a Delivery URL, no HMAC signing)
+    if (url.pathname === '/webhook/unifi-unlock' && req.method === 'POST') {
+      if (!config.checkin.enabled) { send(404, '<h1>Not found</h1>'); return; }
+      if (url.searchParams.get('secret') !== config.checkin.webhookSecret) {
+        log('warn', 'Unlock webhook rejected — bad or missing secret');
+        sendJson(401, { error: 'unauthorized' });
+        return;
+      }
+      let body = '';
+      req.on('data', c => { body += c; });
+      req.on('end', async () => {
+        try {
+          const payload = JSON.parse(body || '{}');
+          const events  = Array.isArray(payload.events) ? payload.events : [];
+          const state   = loadState();
+          const results = [];
+          for (const event of events) results.push(await processUnlockWebhookEvent(event, state));
+          return sendJson(200, { received: events.length, results });
+        } catch (err) {
+          log('error', 'Unlock webhook processing failed', { err: err.message });
+          return sendJson(500, { error: err.message });
+        }
+      });
+      return;
+    }
 
     // Login POST
     if (url.pathname === '/admin/login' && req.method === 'POST') {
@@ -1459,6 +1572,11 @@ function validateConfig() {
     console.error(`❌  Invalid EVENT_ACCESS_MODE "${config.events.accessMode}". Must be one of: ${validModes.join(', ')}`);
     process.exit(1);
   }
+
+  if (config.checkin.enabled && !config.checkin.webhookSecret) {
+    console.error('❌  AUTO_CHECKIN_ENABLED=true but CHECKIN_WEBHOOK_SECRET is not set.');
+    process.exit(1);
+  }
 }
 
 async function main() {
@@ -1476,6 +1594,7 @@ async function main() {
     eventBufferMinutes:   config.events.accessBufferMinutes,
     eventUnlockNotify:    config.events.unlockNotify,
     resources:            config.unifi.resources,
+    checkinEnabled:       config.checkin.enabled,
   });
 
   startAdminServer();

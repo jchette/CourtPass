@@ -1,0 +1,480 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "version": "ORGANIZATION",
+    "title": "Organization API",
+    "x-swagger-net-version": "8.4.19.001"
+  },
+  "host": "api.courtreserve.com",
+  "schemes": [
+    "https",
+    "http"
+  ],
+  "note": "Saved 2026-08-17 from a copy pasted by the project owner during a session designing the auto check-in webhook feature. See docs/auto-checkin.md and docs/pin-checkin-integration-notes.md. This is trimmed to the endpoints and definitions directly relevant to that feature (Check-In) plus a representative sample of the surrounding surface for context; it is not the complete original document.",
+  "paths": {
+    "/api/v1/checkins": {
+      "post": {
+        "tags": [
+          "Check-In"
+        ],
+        "operationId": "CheckIn_CheckIn",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml",
+          "application/x-www-form-urlencoded"
+        ],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "data",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CheckInApiRequestDto"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/GenericEnterpriseApiResponseOfCheckInApiResultDto"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/checkins/revert": {
+      "post": {
+        "tags": [
+          "Check-In"
+        ],
+        "operationId": "CheckIn_Revert",
+        "consumes": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml",
+          "application/x-www-form-urlencoded"
+        ],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "data",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CheckInApiRequestDto"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/GenericEnterpriseApiResponseOfCheckInApiResultDto"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reservationreport/listactive": {
+      "get": {
+        "tags": [
+          "Reservation Report"
+        ],
+        "summary": "Retrieves the reservation data for active reservations by reservation periods or creation/update period.\r\nRequires the ReservationReport role with Read permission.",
+        "operationId": "ReservationReport_ListActive",
+        "parameters": [
+          {
+            "name": "reservationsFromDate",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "reservationsToDate",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "includePinCodes",
+            "in": "query",
+            "description": "When true, populates the ReservationPinCode field on each reservation (RemoteLock / scheduled Brivo per-reservation pin) and the PinCode field on each player.",
+            "required": false,
+            "type": "boolean",
+            "default": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns the sales summary report successfully.",
+            "schema": {
+              "$ref": "#/definitions/GenericEnterpriseApiResponseOfIListOfReservationReportDataRowDto"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/eventregistrationreport/listactive": {
+      "get": {
+        "tags": [
+          "Event Registration Report"
+        ],
+        "summary": "Retrieves the reservation data for active event registrations.\r\nRequires the EventRegistrationReport role with Read permission.",
+        "operationId": "EventRegistrationReport_ListActive",
+        "responses": {
+          "200": {
+            "description": "Returns the sales summary report successfully.",
+            "schema": {
+              "$ref": "#/definitions/GenericEnterpriseApiResponseOfIListOfEventRegistrationApiDataRowDto"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/eventcalendar/eventlist": {
+      "get": {
+        "tags": [
+          "Event Calendar"
+        ],
+        "summary": "This service returns a list of event categories types\r\nRequires the EventCalendar role with Read permission.",
+        "operationId": "EventCalendar_EventList",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/GenericEnterpriseApiResponseOfListOfEventApiInfoDto"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attendancereport/checkin": {
+      "get": {
+        "tags": [
+          "Attendance Report"
+        ],
+        "summary": "Retrieves check-in data by attendance period or reservation period.",
+        "operationId": "AttendanceReport_CheckIn",
+        "responses": {
+          "200": {
+            "description": "The attendance period or reservation period report was retrieved successfully.",
+            "schema": {
+              "$ref": "#/definitions/GenericEnterpriseApiResponseOfIListOfCheckinReportRowDto"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "CheckInApiRequestDto": {
+      "required": [
+        "ReservationId"
+      ],
+      "properties": {
+        "ReservationId": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "OrganizationMemberId": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "ReservationGuestId": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "CheckInStatusId": {
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true
+        }
+      },
+      "xml": {
+        "name": "CheckInApiRequestDto"
+      },
+      "type": "object"
+    },
+    "GenericEnterpriseApiResponseOfCheckInApiResultDto": {
+      "properties": {
+        "ErrorMessage": {
+          "type": "string"
+        },
+        "Data": {
+          "$ref": "#/definitions/CheckInApiResultDto"
+        },
+        "IsSuccessStatusCode": {
+          "type": "boolean"
+        }
+      },
+      "xml": {
+        "name": "GenericEnterpriseApiResponse`1"
+      },
+      "type": "object"
+    },
+    "CheckInApiResultDto": {
+      "properties": {
+        "ReservationId": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "ReservationMemberId": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "ReservationGuestId": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "OrganizationMemberId": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "IsGuest": {
+          "type": "boolean"
+        },
+        "IsCheckedIn": {
+          "type": "boolean"
+        },
+        "CheckedInOn": {
+          "type": "string",
+          "format": "date-time",
+          "x-nullable": true
+        },
+        "CheckInStatusId": {
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true
+        },
+        "CheckInStatusName": {
+          "type": "string"
+        },
+        "EventId": {
+          "type": "integer",
+          "format": "int64",
+          "x-nullable": true
+        },
+        "EventName": {
+          "type": "string"
+        }
+      },
+      "xml": {
+        "name": "CheckInApiResultDto"
+      },
+      "type": "object"
+    },
+    "EventApiInfoDto": {
+      "properties": {
+        "EventId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "EventName": {
+          "type": "string"
+        },
+        "StartDateTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "EndDateTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ReservationId": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "xml": {
+        "name": "EventApiInfoDto"
+      },
+      "type": "object"
+    },
+    "EventRegistrationApiDataRowDto": {
+      "properties": {
+        "EventId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "EventName": {
+          "type": "string"
+        },
+        "EventDateId": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "StartTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "EndTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "OrganizationMemberId": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "FirstName": {
+          "type": "string"
+        },
+        "LastName": {
+          "type": "string"
+        },
+        "Email": {
+          "type": "string"
+        },
+        "Phone": {
+          "type": "string"
+        }
+      },
+      "xml": {
+        "name": "EventRegistrationApiDataRowDto"
+      },
+      "type": "object",
+      "note": "No ReservationId field — confirmed absent, this is why v1 of auto check-in scopes to plain reservations only. Resolving an event's ReservationId requires a separate call to /api/v1/eventcalendar/eventlist (EventApiInfoDto, which does have ReservationId)."
+    },
+    "ReservationReportDataRowDto": {
+      "properties": {
+        "Id": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "StartTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "EndTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ReservationPinCode": {
+          "type": "string"
+        },
+        "Players": {
+          "items": {
+            "$ref": "#/definitions/ReservationReportPlayerRowDto"
+          },
+          "type": "array"
+        }
+      },
+      "xml": {
+        "name": "ReservationReportDataRowDto"
+      },
+      "type": "object"
+    },
+    "ReservationReportPlayerRowDto": {
+      "properties": {
+        "OrganizationMemberId": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "FirstName": {
+          "type": "string"
+        },
+        "LastName": {
+          "type": "string"
+        },
+        "Email": {
+          "type": "string"
+        },
+        "Phone": {
+          "type": "string"
+        },
+        "PinCode": {
+          "type": "string"
+        }
+      },
+      "xml": {
+        "name": "ReservationReportPlayerRowDto"
+      },
+      "type": "object"
+    },
+    "CheckinReportRowDto": {
+      "properties": {
+        "OrganizationMemberId": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "MemberFirstName": {
+          "type": "string"
+        },
+        "MemberLastName": {
+          "type": "string"
+        },
+        "CheckinDateTime": {
+          "type": "string",
+          "format": "date-time",
+          "x-nullable": true
+        },
+        "CheckInType": {
+          "type": "string"
+        },
+        "CheckInStatusName": {
+          "type": "string"
+        },
+        "ReservationStartDateTime": {
+          "type": "string",
+          "format": "date-time",
+          "x-nullable": true
+        },
+        "ReservationEndDateTime": {
+          "type": "string",
+          "format": "date-time",
+          "x-nullable": true
+        }
+      },
+      "xml": {
+        "name": "CheckinReportRowDto"
+      },
+      "type": "object"
+    }
+  },
+  "securityDefinitions": {
+    "basic": {
+      "type": "basic",
+      "description": "Basic HTTP Authentication"
+    }
+  },
+  "tags": [
+    {
+      "name": "Reservation Report"
+    },
+    {
+      "name": "Event Registration Report"
+    },
+    {
+      "name": "Event Calendar"
+    },
+    {
+      "name": "Attendance Report"
+    },
+    {
+      "name": "Check-In"
+    }
+  ]
+}
