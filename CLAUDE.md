@@ -71,6 +71,20 @@ Controlled by `PIN_MODE`:
 
 ---
 
+## Permanent-access members (optional, `PERMANENT_ACCESS_MEMBERSHIP_KEYWORD`)
+
+Some clubs give a membership tier (e.g. a gym add-on) a permanent 24/7 UniFi credential set up outside of CourtPin — confirmed in production at Ohio Valley Pickleball Club. Without special-casing this, `processReservation`/`processEvents` still try to issue that member a *second*, temporary Visitor + PIN for every court reservation, which collides with their existing permanent credential. `assignPinWithFallback()` handles the collision fine (see "PIN generation modes" above) but the outcome is still bad: the member gets emailed a different, temporary PIN they don't need, alongside an unnecessary extra Visitor object in UniFi that has to be cleaned up later.
+
+`hasPermanentAccess(memberId)` (CourtReserve API section) calls `GET /api/v1/member/get?organizationMemberId=...` and matches `MembershipTypeName` case-insensitively against the configured keyword (substring match — e.g. `Gym` matches `"Pro + Gym"`), also requiring `MembershipStatus === 'Active'`. This is a separate CourtReserve API call per newly-seen player/registrant (not per cycle — gated the same way as everything else by `state.processed`), distinct from the `ReservationReport`/`EventRegistrationReport` roles already required elsewhere.
+
+When it matches, `processReservation` and the `pin_individual` branch of `processEvents` skip `createVisitor`/`assignPinWithFallback` entirely, still send the normal access email/SMS, but with `deriveStaticPin(memberId)` reused directly as the PIN instead of generating a new one — this assumes the member's permanent UniFi credential's PIN **is** that same static derivation (true when staff set it up to match, which is the common case and why the collision happens in the first place). The state entry gets `permanentAccess: true` and no `visitorId`, so `cleanupExpiredVisitors()`'s Pass 1 naturally leaves it alone (it already skips entries with no `visitorId` — same as existing `unlock`-mode event entries).
+
+**Requires `PIN_MODE=static`.** Meaningless under `PIN_MODE=random` since there's no predictable derivation to reuse — `validateConfig()` warns (not a hard error) if the keyword is set while `PIN_MODE` isn't `static`, and `hasPermanentAccess()` itself no-ops in that case.
+
+**Scope:** only plain reservations and `EVENT_ACCESS_MODE=pin_individual` — not `pin_shared`/`unlock`, which use one shared credential for the whole event rather than one per registrant, so "this specific registrant already has permanent access" doesn't apply the same way.
+
+---
+
 ## Email transport — priority logic
 
 `_sendEmail()` picks the transport with a simple, non-configurable priority: **if `RESEND_API_KEY` has any truthy value, Resend is used — full stop, regardless of whether SMTP variables are also populated.** SMTP (via nodemailer) is only used when `RESEND_API_KEY` is empty/unset. There is no merging or fallback between the two. If a user reports "I filled in SMTP but it's still using Resend," the fix is telling them to blank out `RESEND_API_KEY`, not a code change.

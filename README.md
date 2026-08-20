@@ -30,6 +30,8 @@ Multi-player reservations are fully supported — every player gets their own Vi
 
 Optionally, entering that PIN at the door can also submit the member's CourtReserve check-in automatically — see [docs/auto-checkin.md](docs/auto-checkin.md).
 
+Optionally, members whose CourtReserve membership tier already has permanent 24/7 UniFi access (e.g. a gym add-on) can be skipped so they're not issued a confusing second, temporary PIN — see `PERMANENT_ACCESS_MEMBERSHIP_KEYWORD` in [docs/configuration.md](docs/configuration.md).
+
 ---
 
 ## Example timeline

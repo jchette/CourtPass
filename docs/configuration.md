@@ -52,6 +52,7 @@ STATE_FILE=/tmp/state.json
 AUTO_CHECKIN_ENABLED=false
 CHECKIN_WEBHOOK_SECRET=
 CHECKIN_STATUS_ID=
+PERMANENT_ACCESS_MEMBERSHIP_KEYWORD=
 ```
 
 > **Note on hex colors:** Railway treats `#` as a comment character. Enter hex colors **without** the `#` symbol. For `#1a56db` enter `1a56db`. The code adds it automatically.
@@ -199,3 +200,19 @@ When enabled, entering a PIN at the door also submits a CourtReserve check-in fo
 | `AUTO_CHECKIN_ENABLED` | No | `false` | Set `true` to enable the `/webhook/unifi-unlock` endpoint. When `false`, the endpoint returns a plain 404. |
 | `CHECKIN_WEBHOOK_SECRET` | If enabled | — | Shared secret checked against the webhook URL's `?secret=` query param. UniFi's Alarm Manager has no HMAC signing, so this is the only available auth mechanism. Generate a long random string. |
 | `CHECKIN_STATUS_ID` | If your org uses custom Check-In Statuses | — | Some CourtReserve orgs have Settings → Check-In Statuses enabled, in which case the API rejects a check-in without a status ID. Find yours via `https://app.courtreserve.com/CheckInStatus/GetCheckInStatuses` while logged into CourtReserve admin — use the `Id` for "Checked-In" (or your org's equivalent). Leave blank if your org doesn't use custom statuses. |
+
+---
+
+## Permanent-access members (optional)
+
+Some clubs give a membership tier (e.g. a gym add-on) a permanent 24/7 UniFi credential set up outside of CourtPin. Without this setting, when that member books a court, CourtPin still tries to issue them a second, temporary PIN — which collides with their existing permanent one and (thanks to the collision-fallback ladder in `PIN_MODE=static`) ends up emailing them a different, confusing code instead of failing outright.
+
+Setting this makes CourtPin look the member up via CourtReserve's member API before creating a Visitor, and if they match, skip issuing a new PIN — the confirmation email still goes out, but with their existing PIN instead of a new one, and no UniFi Visitor is created.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `PERMANENT_ACCESS_MEMBERSHIP_KEYWORD` | No | — | A keyword matched case-insensitively (substring) against CourtReserve's `MembershipTypeName` — e.g. `Gym` matches `Pro + Gym`, `Family + Gym`, etc. Only members with an **Active** membership status are matched. Leave blank to disable (default) — every member gets a normal temporary PIN per reservation. |
+
+**Requires `PIN_MODE=static`.** The email sent to a matched member reuses the same `deriveStaticPin()` value CourtPin would otherwise have assigned as a new PIN — that's the only way to know what their permanent PIN already is, since UniFi never returns a PIN's plaintext on read, only a hash. If your gym members' permanent PINs weren't set to that same derivation, this feature will show them the wrong code — don't enable it in that case. Setting this keyword while `PIN_MODE=random` has no effect (logged as a startup warning).
+
+This currently applies to plain reservations and `EVENT_ACCESS_MODE=pin_individual` event registrations — not `pin_shared` or `unlock` mode, where there's one shared credential for the whole event rather than one per registrant.

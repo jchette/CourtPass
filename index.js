@@ -120,6 +120,16 @@ const config = {
     // your CourtReserve admin domain (see docs/auto-checkin.md).
     statusId:      process.env.CHECKIN_STATUS_ID ? parseInt(process.env.CHECKIN_STATUS_ID, 10) : null,
   },
+  permanentAccess: {
+    // Optional: some clubs give a membership tier (e.g. "Pro + Gym") a permanent
+    // 24/7 UniFi credential outside of CourtPin. When such a member books a court,
+    // issuing them a second temporary PIN just collides with their existing one
+    // and confuses them with a different code — see processReservation/processEvents.
+    // Matched case-insensitively against CourtReserve's MembershipTypeName
+    // (substring match, so "Gym" also matches "Pro + Gym", "Family + Gym", etc).
+    // Empty/unset disables this feature entirely (default).
+    membershipKeyword: process.env.PERMANENT_ACCESS_MEMBERSHIP_KEYWORD || '',
+  },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -507,6 +517,40 @@ async function fetchTodaysEventRegistrations() {
   return resp.data.Data || [];
 }
 
+// Looks up whether a member already holds a permanent 24/7 UniFi credential
+// (see config.permanentAccess.membershipKeyword) via CourtReserve's member
+// lookup, so processReservation/processEvents can skip issuing them a second,
+// temporary PIN that would just collide with their existing one.
+async function hasPermanentAccess(memberId) {
+  // Only meaningful in PIN_MODE=static — that's the only mode where the PIN
+  // reused for these members (deriveStaticPin) reflects a real credential.
+  if (!config.permanentAccess.membershipKeyword || !memberId || config.pinMode !== 'static') return false;
+
+  try {
+    const resp = await courtreserve.get('/api/v1/member/get', {
+      params: {
+        organizationMemberId:     memberId,
+        pageSize:                 1,
+        pageNumber:                1,
+        includeUserDefinedFields: false,
+        includeRatings:           false,
+      },
+    });
+
+    if (!resp.data?.IsSuccessStatusCode) return false;
+
+    const member = resp.data.Data?.Members?.[0];
+    if (!member) return false;
+
+    const keyword = config.permanentAccess.membershipKeyword.toLowerCase();
+    return member.MembershipStatus === 'Active' &&
+           (member.MembershipTypeName || '').toLowerCase().includes(keyword);
+  } catch (err) {
+    log('warn', 'Permanent-access membership lookup failed — proceeding with normal PIN flow', { memberId, err: err.message });
+    return false;
+  }
+}
+
 // Submits a CourtReserve check-in for a member on a specific reservation —
 // used by the auto check-in webhook (see processUnlockWebhookEvent). Reuses
 // the existing Basic Auth courtreserve client; requires the Check-In role
@@ -723,6 +767,42 @@ async function processReservation(reservation, state) {
     const memberName = `${FirstName || ''} ${LastName || ''}`.trim() || 'Member';
     log('info', 'Processing player', { reservationId, memberId, minutesUntilStart: Math.round(minutesUntilStart) });
 
+    // Member already has a permanent 24/7 UniFi credential (see config.permanentAccess) —
+    // skip creating a second, temporary PIN that would just collide with their existing one.
+    // Their permanent PIN is assumed to be the same PIN_MODE=static derivation CourtPin
+    // would otherwise assign, so it's reused directly rather than stored separately.
+    if (await hasPermanentAccess(memberId)) {
+      const pin = deriveStaticPin(memberId);
+      try {
+        await sendAccessEmail({ to: email, memberName, pin, startDate, endDate, courts, accessBufferMinutes: config.accessBufferMinutes });
+      } catch (err) {
+        log('error', 'Failed to send email to permanent-access member', { email, err: err.message });
+      }
+      if (config.twilio.enabled && phone) {
+        try {
+          await sendAccessSms({ to: phone, memberName, pin, startDate, courts, accessBufferMinutes: config.accessBufferMinutes });
+        } catch (err) {
+          log('error', 'Failed to send SMS to permanent-access member', { phone, err: err.message });
+        }
+      }
+      state.processed[playerKey] = {
+        memberId,
+        reservationId: reservation.Id,
+        email,
+        pin,
+        memberName,
+        phone:       phone || '',
+        court:       courts,
+        startEpoch:  toEpoch(startDate),
+        endEpoch,
+        processedAt: Math.floor(nowMs / 1000),
+        permanentAccess: true, // no UniFi visitor created — member already has standing access
+      };
+      saveState(state);
+      log('info', '✅ Permanent-access member — reused existing PIN, no visitor created', { reservationId, memberId, pin });
+      continue;
+    }
+
     // 1. Create UniFi Visitor
     let visitor;
     try {
@@ -842,6 +922,24 @@ async function processEvents(registrations, state) {
         const phone      = reg.Phone || '';
 
         if (!email) { log('warn', 'Event registrant has no email — skipping', { stateKey }); continue; }
+
+        // Member already has a permanent 24/7 UniFi credential — see the same
+        // check/comment in processReservation.
+        if (await hasPermanentAccess(memberId)) {
+          const pin = deriveStaticPin(memberId);
+          try { await sendAccessEmail({ to: email, memberName, pin, startDate, endDate, courts: eventName, accessBufferMinutes: bufferMins, courtLabel: 'Event' }); }
+          catch (err) { log('error', 'Failed to send event email to permanent-access member', { email, err: err.message }); }
+
+          if (config.twilio.enabled && phone) {
+            try { await sendAccessSms({ to: phone, memberName, pin, startDate, courts: eventName, accessBufferMinutes: bufferMins }); }
+            catch (err) { log('error', 'Failed to send event SMS to permanent-access member', { phone, err: err.message }); }
+          }
+
+          state.processed[stateKey] = { memberId, email, pin, memberName, phone, court: eventName, startEpoch: toEpoch(startDate), endEpoch, processedAt: Math.floor(nowMs / 1000), type: 'event', permanentAccess: true };
+          saveState(state);
+          log('info', '✅ Permanent-access event registrant — reused existing PIN, no visitor created', { stateKey, pin });
+          continue;
+        }
 
         let visitor;
         try {
@@ -1576,6 +1674,10 @@ function validateConfig() {
   if (config.checkin.enabled && !config.checkin.webhookSecret) {
     console.error('❌  AUTO_CHECKIN_ENABLED=true but CHECKIN_WEBHOOK_SECRET is not set.');
     process.exit(1);
+  }
+
+  if (config.permanentAccess.membershipKeyword && config.pinMode !== 'static') {
+    console.warn('⚠️   PERMANENT_ACCESS_MEMBERSHIP_KEYWORD is set but PIN_MODE is not "static" — the reused PIN this feature relies on only reflects a real credential in static mode, so it will be ignored.');
   }
 }
 
